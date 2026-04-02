@@ -20,6 +20,7 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.react)
@@ -93,16 +94,55 @@ end
 ---------------------------------------------------------------------------
 local function Toolbar(props: Props)
 	local config = props.config or {} :: Types.ToolbarConfig
-	local theme = React.useMemo(function()
-		return Theme.mergeTheme(config.theme)
-	end, { config.theme })
-
-	local layout = React.useMemo(function()
-		return Theme.mergeLayout(config.layout)
-	end, { config.layout })
 
 	local autoManage = if config.autoManageBackpack == nil then true else config.autoManageBackpack
 	local keybinds = if config.keybindsEnabled == nil then true else config.keybindsEnabled
+
+	---------------------------------------------------------------------------
+	-- Viewport-based scaling
+	---------------------------------------------------------------------------
+	local camera = Workspace.CurrentCamera
+	local viewportSize, setViewportSize = React.useState(function()
+		return if camera then camera.ViewportSize else Vector2.new(Theme.REFERENCE_WIDTH, Theme.REFERENCE_HEIGHT)
+	end)
+
+	React.useEffect(function()
+		local cam = Workspace.CurrentCamera
+		if not cam then
+			return function() end
+		end
+
+		setViewportSize(cam.ViewportSize)
+
+		local conn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			setViewportSize(cam.ViewportSize)
+		end)
+
+		return function()
+			conn:Disconnect()
+		end
+	end, {})
+
+	local scale = Theme.computeScale(viewportSize)
+
+	-- Apply viewport scale to the base theme so every pixel value adjusts
+	local theme = React.useMemo(function()
+		local base = Theme.mergeTheme(config.theme)
+		return Theme.scaleTheme(base, scale)
+	end, { config.theme, scale } :: { any })
+
+	-- Scale the layout position offset (the -12 bottom margin)
+	local layout = React.useMemo(function()
+		local base = Theme.mergeLayout(config.layout)
+		-- Scale the offset components of the position
+		local pos = base.position :: UDim2
+		base.position = UDim2.new(
+			pos.X.Scale, math.round(pos.X.Offset * scale),
+			pos.Y.Scale, math.round(pos.Y.Offset * scale)
+		)
+		return base
+	end, { config.layout, scale } :: { any })
+
 	local maxSlots = layout.maxVisibleSlots :: number
 
 	-- GUI inset for mouse → ScreenGui coordinate correction
@@ -830,3 +870,4 @@ local function Toolbar(props: Props)
 end
 
 return Toolbar
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

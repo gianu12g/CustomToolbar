@@ -84,6 +84,40 @@ function Theme.mergeLayout(overrides: Types.LayoutConfig?): Types.LayoutConfig
 	return merged
 end
 
+-- Reference resolution the default pixel values are designed for
+Theme.REFERENCE_WIDTH = 1366
+Theme.REFERENCE_HEIGHT = 768
+
+--- Compute a viewport scale factor from the current viewport size.
+--- Uses the smaller axis ratio to keep proportions uniform.
+function Theme.computeScale(viewportSize: Vector2): number
+	local sx = viewportSize.X / Theme.REFERENCE_WIDTH
+	local sy = viewportSize.Y / Theme.REFERENCE_HEIGHT
+	return math.min(sx, sy)
+end
+
+--- Return a new theme with every pixel-based value multiplied by `scale`.
+--- The `_scale` field is also stored so child components can scale their
+--- own hardcoded offsets.
+function Theme.scaleTheme(base: Types.ThemeConfig, scale: number): Types.ThemeConfig
+	if scale == 1 then
+		local out = table.clone(base)
+		out._scale = 1
+		return out
+	end
+
+	local scaled = table.clone(base)
+	scaled.slotSize        = math.round((base.slotSize :: number) * scale)
+	scaled.slotPadding     = math.round((base.slotPadding :: number) * scale)
+	scaled.slotCornerRadius = math.round((base.slotCornerRadius :: number) * scale)
+	scaled.numberSize      = math.round((base.numberSize :: number) * scale)
+	scaled.nameSize        = math.round((base.nameSize :: number) * scale)
+	scaled.backpackButtonSize = math.round((base.backpackButtonSize :: number) * scale)
+	scaled.panelCornerRadius  = math.round((base.panelCornerRadius :: number) * scale)
+	scaled._scale = scale
+	return scaled
+end
+
 function Theme.getDefaultTheme(): Types.ThemeConfig
 	return table.clone(DEFAULT_THEME)
 end
