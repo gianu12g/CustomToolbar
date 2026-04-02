@@ -97,6 +97,8 @@ local function Toolbar(props: Props)
 
 	local autoManage = if config.autoManageBackpack == nil then true else config.autoManageBackpack
 	local keybinds = if config.keybindsEnabled == nil then true else config.keybindsEnabled
+	local dragHoldTime = config.dragHoldTime or 0
+	local backpackSlotCount = config.backpackSlotCount
 
 	---------------------------------------------------------------------------
 	-- Viewport-based scaling
@@ -177,6 +179,11 @@ local function Toolbar(props: Props)
 
 	-- "Just finished a drag" flag to suppress ghost clicks on buttons
 	local justDraggedRef = React.useRef(false)
+
+	-- Drag hold timer: tracks whether the hold duration has elapsed
+	local dragHoldReady, setDragHoldReady = React.useState(dragHoldTime == 0)
+	local dragHoldReadyRef = React.useRef(dragHoldReady)
+	dragHoldReadyRef.current = dragHoldReady
 
 	-- Refs for stale closure avoidance in effects/callbacks
 	local hotbarRef = React.useRef(hotbarSlots)
@@ -443,6 +450,35 @@ local function Toolbar(props: Props)
 	local backpackWasOpenRef = React.useRef(false)
 
 	---------------------------------------------------------------------------
+	-- Effect: drag hold timer (wait dragHoldTime seconds before allowing drag)
+	---------------------------------------------------------------------------
+	React.useEffect(function()
+		if not dragInfo then
+			-- Reset hold readiness when drag is cancelled/completed
+			setDragHoldReady(dragHoldTime == 0)
+			return function() end
+		end
+
+		if dragHoldTime <= 0 then
+			setDragHoldReady(true)
+			return function() end
+		end
+
+		-- Start a timer; drag becomes ready after dragHoldTime seconds
+		setDragHoldReady(false)
+		local cancelled = false
+		task.delay(dragHoldTime, function()
+			if not cancelled then
+				setDragHoldReady(true)
+			end
+		end)
+
+		return function()
+			cancelled = true
+		end
+	end, { dragInfo, dragHoldTime } :: { any })
+
+	---------------------------------------------------------------------------
 	-- Effect: drag tracking (mouse move + mouse up via UserInputService)
 	---------------------------------------------------------------------------
 	React.useEffect(function()
@@ -458,7 +494,7 @@ local function Toolbar(props: Props)
 
 				if not isDraggingRef.current and dragInfoRef.current then
 					local delta = pos - dragInfoRef.current.startPos
-					if delta.Magnitude > DRAG_THRESHOLD then
+					if delta.Magnitude > DRAG_THRESHOLD and dragHoldReadyRef.current then
 						setIsDragging(true)
 						-- Auto-open backpack when drag starts
 						setBackpackOpen(function(prev)
@@ -861,6 +897,7 @@ local function Toolbar(props: Props)
 				dragOverIndex = bpDragOverIdx,
 				dragFromIndex = bpDragFromIdx,
 				isDragging = isDragging,
+				backpackSlotCount = backpackSlotCount,
 			}),
 		}),
 
