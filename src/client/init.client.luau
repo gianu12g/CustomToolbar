@@ -157,7 +157,8 @@ local toolbar = CustomToolbar.new({
 	keybindsEnabled = true,
 	autoManageBackpack = true,
 	backpackSlotCount = 18,
-	dragHoldTime = 1,
+	dragHoldTime = 0.5,
+	dragHoldTimeOpen = 0.05,
 })
 toolbar:Mount()
 

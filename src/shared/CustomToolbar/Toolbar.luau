@@ -97,7 +97,8 @@ local function Toolbar(props: Props)
 
 	local autoManage = if config.autoManageBackpack == nil then true else config.autoManageBackpack
 	local keybinds = if config.keybindsEnabled == nil then true else config.keybindsEnabled
-	local dragHoldTime = config.dragHoldTime or 0
+	local dragHoldTimeClosed = config.dragHoldTime or 0
+	local dragHoldTimeOpen = config.dragHoldTimeOpen or 0
 	local backpackSlotCount = config.backpackSlotCount
 
 	---------------------------------------------------------------------------
@@ -181,7 +182,7 @@ local function Toolbar(props: Props)
 	local justDraggedRef = React.useRef(false)
 
 	-- Drag hold timer: tracks whether the hold duration has elapsed
-	local dragHoldReady, setDragHoldReady = React.useState(dragHoldTime == 0)
+	local dragHoldReady, setDragHoldReady = React.useState(false)
 	local dragHoldReadyRef = React.useRef(dragHoldReady)
 	dragHoldReadyRef.current = dragHoldReady
 
@@ -192,6 +193,7 @@ local function Toolbar(props: Props)
 	local dragInfoRef = React.useRef(dragInfo)
 	local isDraggingRef = React.useRef(isDragging)
 	local hoverTargetRef = React.useRef(hoverTarget)
+	local backpackOpenRef = React.useRef(backpackOpen)
 
 	hotbarRef.current = hotbarSlots
 	backpackRef.current = backpackSlots
@@ -199,6 +201,7 @@ local function Toolbar(props: Props)
 	dragInfoRef.current = dragInfo
 	isDraggingRef.current = isDragging
 	hoverTargetRef.current = hoverTarget
+	backpackOpenRef.current = backpackOpen
 
 	---------------------------------------------------------------------------
 	-- Equip / unequip a hotbar slot (click interaction)
@@ -450,24 +453,27 @@ local function Toolbar(props: Props)
 	local backpackWasOpenRef = React.useRef(false)
 
 	---------------------------------------------------------------------------
-	-- Effect: drag hold timer (wait dragHoldTime seconds before allowing drag)
+	-- Effect: drag hold timer (pick duration based on backpack open/closed)
 	---------------------------------------------------------------------------
 	React.useEffect(function()
 		if not dragInfo then
 			-- Reset hold readiness when drag is cancelled/completed
-			setDragHoldReady(dragHoldTime == 0)
+			setDragHoldReady(false)
 			return function() end
 		end
 
-		if dragHoldTime <= 0 then
+		-- Choose hold time: shorter when backpack is already open for quick rearranging
+		local holdTime = if backpackOpenRef.current then dragHoldTimeOpen else dragHoldTimeClosed
+
+		if holdTime <= 0 then
 			setDragHoldReady(true)
 			return function() end
 		end
 
-		-- Start a timer; drag becomes ready after dragHoldTime seconds
+		-- Start a timer; drag becomes ready after holdTime seconds
 		setDragHoldReady(false)
 		local cancelled = false
-		task.delay(dragHoldTime, function()
+		task.delay(holdTime, function()
 			if not cancelled then
 				setDragHoldReady(true)
 			end
@@ -476,7 +482,7 @@ local function Toolbar(props: Props)
 		return function()
 			cancelled = true
 		end
-	end, { dragInfo, dragHoldTime } :: { any })
+	end, { dragInfo } :: { any })
 
 	---------------------------------------------------------------------------
 	-- Effect: drag tracking (mouse move + mouse up via UserInputService)
