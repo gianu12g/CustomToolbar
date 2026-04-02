@@ -263,24 +263,35 @@ local function Toolbar(props: Props)
 				end
 
 			----------------------------------------------------------------
-			-- Hotbar → Backpack slot: swap
+			-- Hotbar → Backpack slot: swap or insert into empty cell
 			----------------------------------------------------------------
 			elseif srcType == "hotbar" and dstType == "backpack" then
 				local dstSlot = backpackRef.current[dstIdx]
-				setHotbarSlots(function(prev)
-					local new = table.clone(prev)
-					new[srcIdx] = dstSlot or nil
-					return new
-				end)
-				setBackpackSlots(function(prev)
-					local new = table.clone(prev)
-					if dstSlot then
+				if dstSlot then
+					-- Swap: backpack item goes to hotbar, hotbar item goes to backpack
+					setHotbarSlots(function(prev)
+						local new = table.clone(prev)
+						new[srcIdx] = dstSlot
+						return new
+					end)
+					setBackpackSlots(function(prev)
+						local new = table.clone(prev)
 						new[dstIdx] = srcSlot
-					else
+						return new
+					end)
+				else
+					-- Dropped on empty backpack cell → append to backpack, clear hotbar slot
+					setHotbarSlots(function(prev)
+						local new = table.clone(prev)
+						new[srcIdx] = nil
+						return new
+					end)
+					setBackpackSlots(function(prev)
+						local new = table.clone(prev)
 						table.insert(new, srcSlot)
-					end
-					return new
-				end)
+						return new
+					end)
+				end
 				if selectedRef.current == srcIdx then
 					setSelectedIndex(nil)
 					local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -318,14 +329,21 @@ local function Toolbar(props: Props)
 				end
 
 			----------------------------------------------------------------
-			-- Backpack → Backpack: swap
+			-- Backpack → Backpack: swap or reorder
 			----------------------------------------------------------------
 			elseif srcType == "backpack" and dstType == "backpack" then
-				setBackpackSlots(function(prev)
-					local new = table.clone(prev)
-					new[srcIdx], new[dstIdx] = new[dstIdx], new[srcIdx]
-					return new
-				end)
+				local dstSlot = backpackRef.current[dstIdx]
+				if dstSlot then
+					-- Both occupied → swap
+					setBackpackSlots(function(prev)
+						local new = table.clone(prev)
+						new[srcIdx], new[dstIdx] = new[dstIdx], new[srcIdx]
+						return new
+					end)
+				else
+					-- Dragged to empty cell → item stays, nothing changes visually
+					-- (auto-arrange keeps items packed, so this is a no-op)
+				end
 			end
 		end
 		-- Drop on nothing → cancel (no change)
@@ -380,6 +398,11 @@ local function Toolbar(props: Props)
 	end, {})
 
 	---------------------------------------------------------------------------
+	-- Track whether backpack was already open before a drag started
+	---------------------------------------------------------------------------
+	local backpackWasOpenRef = React.useRef(false)
+
+	---------------------------------------------------------------------------
 	-- Effect: drag tracking (mouse move + mouse up via UserInputService)
 	---------------------------------------------------------------------------
 	React.useEffect(function()
@@ -397,6 +420,11 @@ local function Toolbar(props: Props)
 					local delta = pos - dragInfoRef.current.startPos
 					if delta.Magnitude > DRAG_THRESHOLD then
 						setIsDragging(true)
+						-- Auto-open backpack when drag starts
+						setBackpackOpen(function(prev)
+							backpackWasOpenRef.current = prev
+							return true
+						end)
 					end
 				end
 			end
@@ -407,6 +435,10 @@ local function Toolbar(props: Props)
 				or input.UserInputType == Enum.UserInputType.Touch then
 				if isDraggingRef.current then
 					completeDrag()
+					-- After drag completes, restore backpack open state to what it was before
+					if not backpackWasOpenRef.current then
+						setBackpackOpen(false)
+					end
 				else
 					-- Was a click, not a drag → equip/unequip if hotbar
 					local info = dragInfoRef.current
@@ -788,6 +820,7 @@ local function Toolbar(props: Props)
 				onSlotHoverChange = onSlotHoverChange,
 				dragOverIndex = bpDragOverIdx,
 				dragFromIndex = bpDragFromIdx,
+				isDragging = isDragging,
 			}),
 		}),
 

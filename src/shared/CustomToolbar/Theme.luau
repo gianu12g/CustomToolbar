@@ -44,7 +44,7 @@ local DEFAULT_THEME: Types.ThemeConfig = {
 	panelBackgroundColor = Color3.fromRGB(25, 25, 25),
 	panelBackgroundTransparency = 0.15,
 	panelCornerRadius = 10,
-	panelColumns = 5,
+	panelColumns = 7,
 
 	-- Animations
 	selectAnimationSpeed = 0.15,
