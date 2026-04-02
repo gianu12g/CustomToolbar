@@ -2,7 +2,7 @@
 --[[
 	CustomToolbar – Slot
 	A single toolbar slot. Handles hover highlight, selection ring,
-	number badge, tool icon, and tool name label.
+	number badge, tool icon, tool name label, and drag interactions.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -15,7 +15,11 @@ type Props = {
 	slotData: Types.SlotData?,
 	isSelected: boolean,
 	theme: Types.ThemeConfig,
-	onSelect: (index: number) -> (),
+	source: string, -- "hotbar" | "backpack"
+	onMouseDown: ((index: number, source: string) -> ())?,
+	onHoverChange: ((index: number, source: string, hovering: boolean) -> ())?,
+	isDragOver: boolean?,
+	isBeingDragged: boolean?,
 }
 
 local function Slot(props: Props)
@@ -23,13 +27,17 @@ local function Slot(props: Props)
 	local slotData = props.slotData
 	local isSelected = props.isSelected
 	local isHovered, setIsHovered = React.useState(false)
+	local isDragOver = props.isDragOver or false
+	local isBeingDragged = props.isBeingDragged or false
 
 	local slotSize = theme.slotSize :: number
 	local cornerRadius = theme.slotCornerRadius :: number
 
 	-- Determine background color
 	local bgColor: Color3
-	if isSelected then
+	if isDragOver then
+		bgColor = theme.slotSelectedColor :: Color3
+	elseif isSelected then
 		bgColor = theme.slotSelectedColor :: Color3
 	elseif isHovered and slotData then
 		bgColor = theme.slotHoverColor :: Color3
@@ -38,10 +46,17 @@ local function Slot(props: Props)
 	end
 
 	local borderColor: Color3
-	if isSelected then
+	if isDragOver then
+		borderColor = theme.slotSelectedBorderColor :: Color3
+	elseif isSelected then
 		borderColor = theme.slotSelectedBorderColor :: Color3
 	else
 		borderColor = theme.slotBorderColor :: Color3
+	end
+
+	local transparency = theme.slotBackgroundTransparency :: number
+	if isBeingDragged then
+		transparency = 0.7
 	end
 
 	local iconSize = theme.iconSizeScale :: number
@@ -49,19 +64,30 @@ local function Slot(props: Props)
 	return React.createElement("ImageButton", {
 		Size = UDim2.fromOffset(slotSize, slotSize),
 		BackgroundColor3 = bgColor,
-		BackgroundTransparency = theme.slotBackgroundTransparency,
+		BackgroundTransparency = transparency,
 		BorderSizePixel = 0,
 		AutoButtonColor = false,
 		LayoutOrder = props.index,
 
-		[React.Event.Activated] = function()
-			props.onSelect(props.index)
+		[React.Event.InputBegan] = function(_rbx, input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1
+				or input.UserInputType == Enum.UserInputType.Touch then
+				if props.onMouseDown then
+					props.onMouseDown(props.index, props.source)
+				end
+			end
 		end,
 		[React.Event.MouseEnter] = function()
 			setIsHovered(true)
+			if props.onHoverChange then
+				props.onHoverChange(props.index, props.source, true)
+			end
 		end,
 		[React.Event.MouseLeave] = function()
 			setIsHovered(false)
+			if props.onHoverChange then
+				props.onHoverChange(props.index, props.source, false)
+			end
 		end,
 	}, {
 		Corner = React.createElement("UICorner", {
@@ -74,8 +100,8 @@ local function Slot(props: Props)
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		}),
 
-		-- Number badge (top-left)
-		NumberLabel = theme.showSlotNumbers and React.createElement("TextLabel", {
+		-- Number badge (top-left, hotbar only)
+		NumberLabel = theme.showSlotNumbers and props.source == "hotbar" and React.createElement("TextLabel", {
 			Text = tostring(props.index),
 			Size = UDim2.fromOffset(18, 16),
 			Position = UDim2.fromOffset(4, 2),
@@ -92,6 +118,7 @@ local function Slot(props: Props)
 		Icon = slotData and React.createElement("ImageLabel", {
 			Image = slotData.icon,
 			ImageColor3 = theme.iconColor,
+			ImageTransparency = isBeingDragged and 0.5 or 0,
 			Size = UDim2.fromScale(iconSize, iconSize),
 			Position = UDim2.fromScale(0.5, 0.45),
 			AnchorPoint = Vector2.new(0.5, 0.5),
