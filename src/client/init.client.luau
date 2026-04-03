@@ -1,25 +1,146 @@
 --[[
-	Demo client script for CustomToolbar.
-	This shows basic usage — drop-in with zero config,
-	or fully themed. Includes preset themes and a live UpdateConfig demo.
+	CustomToolbar — Client entry point.
+	Swap between the bare-minimum mount and the fully themed example below.
+
+	TOOL SETUP (in Studio or via server script):
+
+		-- Rarity tier (drives border colour + animation speed)
+		tool:SetAttribute("Rarity", "Epic")
+
+		-- Optional: override the gradient preset for one specific tool
+		tool:SetAttribute("OutlinePreset", "Toxic")
+
+	Built-in rarity tiers:
+		Common, Uncommon, Rare, Epic, Legendary, Mythic
+
+	Available gradient presets:
+		"Rainbow", "Fire", "Ice", "Toxic", "Galaxy"
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CustomToolbar = require(ReplicatedStorage.Shared.CustomToolbar)
 
 ---------------------------------------------------------------------------
--- Theme presets
+-- 1) ZERO-CONFIG — mirrors the native Roblox backpack look
+---------------------------------------------------------------------------
+-- local toolbar = CustomToolbar.new()
+-- toolbar:Mount()
+
+local toolbar = CustomToolbar.new({
+
+	----- THEME -----
+	-- Controls all visual styling. Every field is optional;
+	-- anything you leave out falls back to the built-in default.
+	theme = {
+
+		-- Slot appearance
+		slotSize = 70, -- pixel size of each slot square
+		slotPadding = 6, -- gap between slots (pixels)
+		slotCornerRadius = 10, -- rounded corner radius (pixels)
+		slotBackgroundColor = Color3.fromRGB(28, 34, 44),
+		slotBackgroundTransparency = 0.05, -- 0 = opaque, 1 = invisible
+		slotBorderColor = Color3.fromRGB(72, 96, 130), -- default border (non-rarity)
+		slotBorderWidth = 2, -- border thickness (pixels)
+		slotSelectedColor = Color3.fromRGB(70, 130, 220), -- background when selected
+		slotSelectedBorderColor = Color3.fromRGB(120, 170, 255), -- border when selected
+		slotHoverColor = Color3.fromRGB(40, 50, 64), -- background on hover
+
+		-- Number badge (top-left of hotbar slots)
+		showSlotNumbers = true, -- show 1-9 labels
+		numberFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
+		numberColor = Color3.fromRGB(255, 255, 255),
+		numberSize = 12,
+
+		-- Tool name label (bottom of slot)
+		showToolName = false, -- toggle name visibility
+		nameFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
+		nameColor = Color3.fromRGB(220, 230, 245),
+		nameSize = 10,
+
+		-- Tool icon
+		iconSizeScale = 0.65, -- 0–1, fraction of slot size
+		iconColor = Color3.fromRGB(255, 255, 255),
+
+		-- Backpack toggle button
+		backpackButtonIcon = "rbxasset://textures/ui/TopBar/inventoryOn.png",
+		backpackButtonSize = 45,
+
+		-- Backpack panel (grid that opens when you click the button)
+		panelBackgroundColor = Color3.fromRGB(18, 22, 30),
+		panelBackgroundTransparency = 0.02,
+		panelCornerRadius = 10,
+		panelColumns = 7, -- columns in the backpack grid
+
+		-- Animations
+		selectAnimationSpeed = 0.15, -- seconds for selection tween
+		hoverAnimationSpeed = 0.1, -- seconds for hover tween
+
+		-- Rarity border colours (key = Tool:GetAttribute("Rarity") value)
+		-- Only override the ones you want — the rest keep defaults.
+		rarityColors = {
+			-- Common    = Color3.fromRGB(180, 180, 180),
+			-- Uncommon  = Color3.fromRGB(80, 200, 80),
+			-- Rare      = Color3.fromRGB(70, 130, 255),
+			-- Epic      = Color3.fromRGB(180, 70, 255),
+			-- Legendary = Color3.fromRGB(255, 170, 0),
+			-- Mythic    = Color3.fromRGB(255, 50, 50),
+			-- Divine = Color3.fromRGB(255, 255, 255), -- custom tier example
+		},
+
+		-- Rarity gradient presets (key = rarity name, value = preset name)
+		-- Available presets: "Rainbow", "Fire", "Ice", "Toxic", "Galaxy"
+		-- Omit a tier to use the default single-colour shine.
+		-- Individual tools can override with: tool:SetAttribute("OutlinePreset", "Toxic")
+		rarityPresets = {
+			-- Mythic    = "Rainbow",
+			-- Legendary = "Fire",
+			-- Epic      = "Galaxy",
+			-- Rare      = "Ice",
+			-- Uncommon intentionally omitted → uses default shine
+			-- Common has no animation regardless
+		},
+	},
+
+	----- LAYOUT -----
+	-- Controls positioning and slot count.
+	layout = {
+		orientation = "Horizontal", -- "Horizontal" or "Vertical"
+		position = UDim2.fromScale(0.5, 0.98), -- screen position
+		anchorPoint = Vector2.new(0.5, 1), -- anchor relative to position
+		maxVisibleSlots = 6, -- hotbar slot count
+		displayOrder = 10, -- ScreenGui.DisplayOrder
+	},
+
+	----- BEHAVIOUR -----
+	autoManageBackpack = true, -- auto-sync tools from player.Backpack
+	keybindsEnabled = true, -- 1-9 number key shortcuts
+	gamepadEnabled = true, -- bumper scroll on gamepad
+	backpackSlotCount = 18, -- total cells in the backpack panel
+	dragHoldTime = 0.5, -- seconds to hold before drag starts (backpack closed)
+	dragHoldTimeOpen = 0.05, -- seconds to hold before drag starts (backpack open)
+})
+toolbar:Mount()
+
+---------------------------------------------------------------------------
+-- 2) FULLY THEMED — uncomment this block and comment out the above
+--    to see every available setting with explanations
+---------------------------------------------------------------------------
+
+--[[
+
+---------------------------------------------------------------------------
+-- Theme presets (pick one, or make your own)
 ---------------------------------------------------------------------------
 
 -- Slate Blue: clean, modern, high contrast
-local SlateBlueTheme = {
+local SlateBlueTheme: CustomToolbar.ThemeConfig = {
 	slotSize = 70,
 	slotPadding = 6,
 	slotCornerRadius = 10,
 	slotBackgroundColor = Color3.fromRGB(28, 34, 44),
 	slotBackgroundTransparency = 0.05,
 	slotBorderColor = Color3.fromRGB(72, 96, 130),
-	slotBorderWidth = 1,
+	slotBorderWidth = 2,
 	slotSelectedColor = Color3.fromRGB(70, 130, 220),
 	slotSelectedBorderColor = Color3.fromRGB(120, 170, 255),
 	slotHoverColor = Color3.fromRGB(40, 50, 64),
@@ -33,8 +154,8 @@ local SlateBlueTheme = {
 	panelColumns = 6,
 }
 
--- Frost Blue: brighter blue theme, but with much better readability
-local FrostBlueTheme = {
+-- Frost Blue: brighter, airy
+local FrostBlueTheme: CustomToolbar.ThemeConfig = {
 	slotSize = 70,
 	slotPadding = 6,
 	slotCornerRadius = 10,
@@ -55,8 +176,8 @@ local FrostBlueTheme = {
 	panelColumns = 6,
 }
 
--- Crimson Black: stronger version of your red theme
-local CrimsonBlackTheme = {
+-- Crimson Black: deep red, high contrast
+local CrimsonBlackTheme: CustomToolbar.ThemeConfig = {
 	slotSize = 70,
 	slotPadding = 6,
 	slotCornerRadius = 10,
@@ -77,8 +198,8 @@ local CrimsonBlackTheme = {
 	panelColumns = 6,
 }
 
--- Emerald Dark: readable and rich without being too saturated
-local EmeraldDarkTheme = {
+-- Emerald Dark: rich green, easy on the eyes
+local EmeraldDarkTheme: CustomToolbar.ThemeConfig = {
 	slotSize = 70,
 	slotPadding = 6,
 	slotCornerRadius = 10,
@@ -99,8 +220,8 @@ local EmeraldDarkTheme = {
 	panelColumns = 6,
 }
 
--- Gold Night: strong contrast, premium-looking
-local GoldNightTheme = {
+-- Gold Night: warm premium feel
+local GoldNightTheme: CustomToolbar.ThemeConfig = {
 	slotSize = 70,
 	slotPadding = 6,
 	slotCornerRadius = 10,
@@ -121,8 +242,8 @@ local GoldNightTheme = {
 	panelColumns = 6,
 }
 
--- Violet Steel: stylish but still very legible
-local VioletSteelTheme = {
+-- Violet Steel: cool purple, stylish
+local VioletSteelTheme: CustomToolbar.ThemeConfig = {
 	slotSize = 70,
 	slotPadding = 6,
 	slotCornerRadius = 10,
@@ -144,26 +265,11 @@ local VioletSteelTheme = {
 }
 
 ---------------------------------------------------------------------------
--- Start with the Light Blue theme
+-- Pick a theme and mount with every available setting
 ---------------------------------------------------------------------------
-local toolbar = CustomToolbar.new({
-	theme = SlateBlueTheme,
-	layout = {
-		orientation = "Horizontal",
-		position = UDim2.fromScale(0.5, 0.98),
-		anchorPoint = Vector2.new(0.5, 1),
-		maxVisibleSlots = 6,
-	},
-	keybindsEnabled = true,
-	autoManageBackpack = true,
-	backpackSlotCount = 18,
-	dragHoldTime = 0.5,
-	dragHoldTimeOpen = 0.05,
-})
-toolbar:Mount()
 
 ---------------------------------------------------------------------------
--- Cycle themes every 2 seconds for recording
+-- Theme cycling demo (uncomment to preview all themes in a loop)
 ---------------------------------------------------------------------------
 -- local themes = {
 -- 	SlateBlueTheme,
@@ -173,30 +279,13 @@ toolbar:Mount()
 -- 	GoldNightTheme,
 -- 	VioletSteelTheme,
 -- }
-
+--
 -- task.spawn(function()
 -- 	local index = 1
-
 -- 	while true do
 -- 		toolbar:UpdateConfig({
 -- 			theme = themes[index],
 -- 			layout = {
 -- 				orientation = "Horizontal",
 -- 				position = UDim2.fromScale(0.5, 0.98),
--- 				anchorPoint = Vector2.new(0.5, 1),
--- 				maxVisibleSlots = 6,
--- 			},
--- 			keybindsEnabled = true,
--- 			autoManageBackpack = true,
--- 			backpackSlotCount = 18,
--- 			dragHoldTime = 0.05,
--- 		})
-
--- 		index += 1
--- 		if index > #themes then
--- 			index = 1
--- 		end
-
--- 		task.wait(2)
--- 	end
--- end)
+]]

@@ -3,48 +3,88 @@
 	CustomToolbar
 	Drop-in replacement for Roblox's default backpack/hotbar.
 
-	Usage:
+	─────────────────────────────────────────────────────────────
+	QUICK START
+	─────────────────────────────────────────────────────────────
 
 		local CustomToolbar = require(path.to.CustomToolbar)
 
-		-- Disable the default backpack
-		game.StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
-
-		-- Create with default settings (mirrors native look)
+		-- Create with defaults (mirrors the native look) and mount
 		local toolbar = CustomToolbar.new()
 		toolbar:Mount()
 
-		-- Or customise everything:
+	─────────────────────────────────────────────────────────────
+	FULL EXAMPLE — theme, layout, rarity presets
+	─────────────────────────────────────────────────────────────
+
 		local toolbar = CustomToolbar.new({
 			theme = {
-				slotSize = 70,
+				-- Slot appearance
+				slotSize          = 70,
+				slotCornerRadius  = 12,
 				slotSelectedColor = Color3.fromRGB(255, 170, 0),
-				slotCornerRadius = 12,
-				showToolName = false,
+				showToolName      = false,
+
+				-- Override rarity colours per tier
+				rarityColors = {
+					Legendary = Color3.fromRGB(255, 200, 50),
+				},
+
+				-- Assign gradient presets per rarity tier
+				-- Available presets: "Rainbow", "Fire", "Ice", "Toxic", "Galaxy"
+				rarityPresets = {
+					Mythic    = "Rainbow",
+					Legendary = "Fire",
+					Epic      = "Galaxy",
+					Rare      = "Ice",
+				},
 			},
+
 			layout = {
-				orientation = "Horizontal",
-				position = UDim2.new(0.5, 0, 1, -20),
+				orientation   = "Horizontal",
+				position      = UDim2.new(0.5, 0, 1, -20),
 				maxVisibleSlots = 6,
 			},
-			keybindsEnabled = true,
+
+			keybindsEnabled    = true,
 			autoManageBackpack = true,
 		})
 		toolbar:Mount()
 
-		-- Later, tear it down cleanly:
-		toolbar:Destroy()
+	─────────────────────────────────────────────────────────────
+	PER-TOOL PRESET OVERRIDE
+	─────────────────────────────────────────────────────────────
 
-	API:
-		CustomToolbar.new(config?) → ToolbarHandle
-		ToolbarHandle:Mount()     → mounts the UI
-		ToolbarHandle:Destroy()   → unmounts UI, cleans up
-		ToolbarHandle:UpdateConfig(config) → live-update theme/layout
+	Any Tool instance can override its rarity tier's preset by
+	setting an attribute in Studio or at runtime:
 
-	Exports:
-		CustomToolbar.Types   → type definitions
-		CustomToolbar.Theme   → default theme table + mergeTheme()
+		tool:SetAttribute("OutlinePreset", "Toxic")
+
+	This takes priority over the theme's rarityPresets mapping,
+	so one Legendary sword can glow "Toxic" while every other
+	Legendary uses "Fire".
+
+	─────────────────────────────────────────────────────────────
+	API
+	─────────────────────────────────────────────────────────────
+
+		CustomToolbar.new(config?)              → ToolbarHandle
+		ToolbarHandle:Mount()                   → mounts UI to PlayerGui
+		ToolbarHandle:UpdateConfig(config)      → live-update theme/layout
+		ToolbarHandle:Destroy()                 → unmounts UI, cleans up
+
+	─────────────────────────────────────────────────────────────
+	RE-EXPORTS
+	─────────────────────────────────────────────────────────────
+
+		CustomToolbar.Types      → type definitions (ThemeConfig, SlotData, etc.)
+		CustomToolbar.Theme      → default theme + mergeTheme() / scaleTheme()
+		CustomToolbar.Component  → raw React component for advanced embedding
 ]]
+
+---------------------------------------------------------------------------
+-- Services & dependencies
+---------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
@@ -57,26 +97,32 @@ local Types = require(script.Types)
 local Theme = require(script.Theme)
 local ToolbarComponent = require(script.Toolbar)
 
+-- Re-export types so consumers can do: local cfg: CustomToolbar.ToolbarConfig = { ... }
 export type ToolbarConfig = Types.ToolbarConfig
 export type ThemeConfig = Types.ThemeConfig
 export type LayoutConfig = Types.LayoutConfig
 export type SlotData = Types.SlotData
 
-----------------------------------------------------------------------
--- ToolbarHandle class
-----------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- ToolbarHandle — controls the lifecycle of a single toolbar instance
+---------------------------------------------------------------------------
+
 local ToolbarHandle = {}
 ToolbarHandle.__index = ToolbarHandle
 
+--- Create a new (unmounted) toolbar handle.
+--- Call :Mount() to render it, :Destroy() to tear it down.
 function ToolbarHandle.new(config: Types.ToolbarConfig?)
 	local self = setmetatable({}, ToolbarHandle)
 	self._config = config or {} :: Types.ToolbarConfig
-	self._root = nil :: any
+	self._root = nil :: any         -- ReactRoblox root
 	self._screenGui = nil :: ScreenGui?
 	self._mounted = false
 	return self
 end
 
+--- Mount the toolbar into PlayerGui. Automatically disables the
+--- native backpack so the two don't fight for input.
 function ToolbarHandle:Mount()
 	if self._mounted then
 		warn("[CustomToolbar] Already mounted. Call :Destroy() first.")
@@ -86,12 +132,10 @@ function ToolbarHandle:Mount()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 
-	-- Disable native backpack
 	pcall(function()
 		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 	end)
 
-	-- Create ScreenGui
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "CustomToolbar"
 	screenGui.ResetOnSpawn = false
@@ -101,16 +145,17 @@ function ToolbarHandle:Mount()
 	screenGui.Parent = playerGui
 	self._screenGui = screenGui
 
-	-- Mount React tree
 	local element = React.createElement(ToolbarComponent, {
 		config = self._config,
 	})
-
 	self._root = ReactRoblox.createRoot(screenGui)
 	self._root:render(element)
 	self._mounted = true
 end
 
+--- Swap in a new config at runtime without unmounting.
+--- Only the fields you provide are changed; everything else keeps
+--- its current value until the next React render reconciles.
 function ToolbarHandle:UpdateConfig(config: Types.ToolbarConfig)
 	self._config = config
 	if self._mounted and self._root then
@@ -121,6 +166,8 @@ function ToolbarHandle:UpdateConfig(config: Types.ToolbarConfig)
 	end
 end
 
+--- Unmount the React tree, destroy the ScreenGui, and release all
+--- references. Safe to call multiple times.
 function ToolbarHandle:Destroy()
 	if self._root then
 		self._root:unmount()
@@ -133,18 +180,20 @@ function ToolbarHandle:Destroy()
 	self._mounted = false
 end
 
-----------------------------------------------------------------------
--- Public module
-----------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- Public module table
+---------------------------------------------------------------------------
+
 local CustomToolbar = {}
 
+--- Convenience constructor — equivalent to ToolbarHandle.new(config).
 function CustomToolbar.new(config: Types.ToolbarConfig?): typeof(ToolbarHandle.new())
 	return ToolbarHandle.new(config)
 end
 
--- Re-exports for advanced usage
-CustomToolbar.Types = Types
-CustomToolbar.Theme = Theme
-CustomToolbar.Component = ToolbarComponent
+-- Re-exports for advanced usage / composition
+CustomToolbar.Types     = Types             -- type definitions
+CustomToolbar.Theme     = Theme             -- default theme + merge helpers
+CustomToolbar.Component = ToolbarComponent  -- raw React component
 
 return CustomToolbar
