@@ -118,6 +118,7 @@ local toolbar = CustomToolbar.new({
 	backpackSlotCount = 18, -- total cells in the backpack panel
 	dragHoldTime = 0.5, -- seconds to hold before drag starts (backpack closed)
 	dragHoldTimeOpen = 0.05, -- seconds to hold before drag starts (backpack open)
+	showEmptySlotBG = false,
 })
 toolbar:Mount()
 

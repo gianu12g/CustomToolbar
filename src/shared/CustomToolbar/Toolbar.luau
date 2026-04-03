@@ -116,6 +116,7 @@ local function Toolbar(props: Props)
 	local dragHoldTimeClosed = config.dragHoldTime or 0
 	local dragHoldTimeOpen = config.dragHoldTimeOpen or 0
 	local backpackSlotCount = config.backpackSlotCount
+	local showEmptySlotBG = if config.showEmptySlotBG == nil then true else config.showEmptySlotBG
 
 	---------------------------------------------------------------------------
 	-- Viewport-based scaling
@@ -920,6 +921,7 @@ local function Toolbar(props: Props)
 				dragFromIndex = bpDragFromIdx,
 				isDragging = isDragging,
 				backpackSlotCount = backpackSlotCount,
+				showEmptySlotBG = showEmptySlotBG,
 			}),
 		}),
 

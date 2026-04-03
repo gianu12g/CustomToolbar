@@ -48,6 +48,7 @@
 
 			keybindsEnabled    = true,
 			autoManageBackpack = true,
+			showEmptySlotBG    = true,  -- false = only populated slots show BGs
 		})
 		toolbar:Mount()
 

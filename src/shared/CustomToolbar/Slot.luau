@@ -41,6 +41,7 @@ type Props = {
 	onHoverChange: ((index: number, source: string, hovering: boolean) -> ())?,
 	isDragOver: boolean?,
 	isBeingDragged: boolean?,
+	showEmptySlotBG: boolean?, -- when false, empty slots are fully transparent (default true)
 }
 
 local function Slot(props: Props)
@@ -50,6 +51,8 @@ local function Slot(props: Props)
 	local isHovered, setIsHovered = React.useState(false)
 	local isDragOver = props.isDragOver or false
 	local isBeingDragged = props.isBeingDragged or false
+	local showEmptyBG = if props.showEmptySlotBG == nil then true else props.showEmptySlotBG
+	local isEmptyHidden = not slotData and not showEmptyBG and not isDragOver
 
 	local slotSize = theme.slotSize :: number
 	local cornerRadius = theme.slotCornerRadius :: number
@@ -172,7 +175,9 @@ local function Slot(props: Props)
 	end
 
 	local transparency = theme.slotBackgroundTransparency :: number
-	if isBeingDragged then
+	if isEmptyHidden then
+		transparency = 1
+	elseif isBeingDragged then
 		transparency = 0.7
 	end
 
@@ -215,7 +220,8 @@ local function Slot(props: Props)
 
 		-- UIStroke: rendered only for non-animated slots. For animated rarity slots,
 		-- RarityOutline creates its own stroke so we skip this to avoid doubling.
-		Stroke = not hasAnimatedEffect and React.createElement("UIStroke", {
+		-- Also hidden when the slot is empty and showEmptySlotBG is false.
+		Stroke = not hasAnimatedEffect and not isEmptyHidden and React.createElement("UIStroke", {
 			Color = borderColor,
 			Thickness = theme.slotBorderWidth,
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
