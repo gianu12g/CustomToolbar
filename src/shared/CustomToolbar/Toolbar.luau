@@ -1,26 +1,24 @@
 --!strict
 --[[
 	CustomToolbar – Toolbar
-	The main bar component. Renders a hotbar with a fixed number of visible slots,
-	a backpack toggle button, and the BackpackPanel overlay for overflow storage.
-	Supports full mouse drag between hotbar and backpack.
+	Main React component. Orchestrates hooks and renders the hotbar,
+	backpack panel, and drag ghost.
 
-	Hotbar: quick-access slots (1–maxVisibleSlots), equippable via click or number keys.
-	Backpack: overflow storage. Drag items between hotbar and backpack to organise.
+	All state is React state. Drag timing is handled by useDragAndDrop
+	which keeps drag state as useState to ensure synchronous UI updates
+	within the same React reconciliation pass.
 
 	Drag interactions:
-		- Hotbar ↔ Hotbar: swap slots
-		- Hotbar → Backpack slot: swap
-		- Hotbar → Backpack button: move to backpack (hotbar slot becomes empty)
-		- Backpack → Hotbar: swap (or fill if hotbar slot is empty)
-		- Backpack ↔ Backpack: swap
+		- Hotbar <-> Hotbar: swap slots
+		- Hotbar -> Backpack slot: swap
+		- Hotbar -> Backpack button: move to backpack (hotbar slot becomes empty)
+		- Backpack -> Hotbar: swap (or fill if hotbar slot is empty)
+		- Backpack <-> Backpack: swap
 		- Drop on nothing: cancel (no change)
 ]]
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
-local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.react)
@@ -29,81 +27,15 @@ local Types = require(script.Parent.Types)
 local Theme = require(script.Parent.Theme)
 local Slot = require(script.Parent.Slot)
 local BackpackPanel = require(script.Parent.BackpackPanel)
+local DragGhost = require(script.Parent.DragGhost)
+local useViewportScale = require(script.Parent.useViewportScale)
+local useToolSync = require(script.Parent.useToolSync)
+local useKeyboardInput = require(script.Parent.useKeyboardInput)
+local useDragAndDrop = require(script.Parent.useDragAndDrop)
 
 type Props = {
 	config: Types.ToolbarConfig?,
 }
-
-local DRAG_THRESHOLD = 5
-
--- Map KeyCode Enum values for 1-9
-local NUMBER_KEYS: { [Enum.KeyCode]: number } = {
-	[Enum.KeyCode.One] = 1,
-	[Enum.KeyCode.Two] = 2,
-	[Enum.KeyCode.Three] = 3,
-	[Enum.KeyCode.Four] = 4,
-	[Enum.KeyCode.Five] = 5,
-	[Enum.KeyCode.Six] = 6,
-	[Enum.KeyCode.Seven] = 7,
-	[Enum.KeyCode.Eight] = 8,
-	[Enum.KeyCode.Nine] = 9,
-}
-
--- Helper: read tools from player Backpack + Character
-local function gatherTools(player: Player): { Tool }
-	local tools: { Tool } = {}
-
-	local backpack = player:FindFirstChild("Backpack")
-	if backpack then
-		for _, child in backpack:GetChildren() do
-			if child:IsA("Tool") then
-				table.insert(tools, child)
-			end
-		end
-	end
-
-	local character = player.Character
-	if character then
-		for _, child in character:GetChildren() do
-			if child:IsA("Tool") then
-				table.insert(tools, child)
-			end
-		end
-	end
-
-	table.sort(tools, function(a, b)
-		return a.Name < b.Name
-	end)
-
-	return tools
-end
-
-local function toolToSlotData(tool: Tool, order: number): Types.SlotData
-	-- Read optional rarity and outline preset from Tool attributes
-	local rarity: string? = nil
-	local outlinePreset: string? = nil
-	pcall(function()
-		local r = tool:GetAttribute("Rarity")
-		if type(r) == "string" and r ~= "" then
-			rarity = r
-		end
-		local p = tool:GetAttribute("OutlinePreset")
-		if type(p) == "string" and p ~= "" then
-			outlinePreset = p
-		end
-	end)
-
-	return {
-		id = tool.Name .. "_" .. tostring(order),
-		name = tool.Name,
-		icon = tool.TextureId ~= "" and tool.TextureId or "rbxasset://textures/ui/GuiImagePlaceholder.png",
-		tool = tool,
-		order = order,
-		rarity = rarity,
-		outlinePreset = outlinePreset,
-		onActivated = nil,
-	}
-end
 
 ---------------------------------------------------------------------------
 -- Component
@@ -118,43 +50,20 @@ local function Toolbar(props: Props)
 	local backpackSlotCount = config.backpackSlotCount
 	local showEmptySlotBG = if config.showEmptySlotBG == nil then true else config.showEmptySlotBG
 
-	---------------------------------------------------------------------------
-	-- Viewport-based scaling
-	---------------------------------------------------------------------------
-	local camera = Workspace.CurrentCamera
-	local viewportSize, setViewportSize = React.useState(function()
-		return if camera then camera.ViewportSize else Vector2.new(Theme.REFERENCE_WIDTH, Theme.REFERENCE_HEIGHT)
-	end)
+	local player = Players.LocalPlayer
 
-	React.useEffect(function()
-		local cam = Workspace.CurrentCamera
-		if not cam then
-			return function() end
-		end
+	-----------------------------------------------------------------------
+	-- Viewport scaling (hook)
+	-----------------------------------------------------------------------
+	local scale = useViewportScale()
 
-		setViewportSize(cam.ViewportSize)
-
-		local conn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-			setViewportSize(cam.ViewportSize)
-		end)
-
-		return function()
-			conn:Disconnect()
-		end
-	end, {})
-
-	local scale = Theme.computeScale(viewportSize)
-
-	-- Apply viewport scale to the base theme so every pixel value adjusts
 	local theme = React.useMemo(function()
 		local base = Theme.mergeTheme(config.theme)
 		return Theme.scaleTheme(base, scale)
 	end, { config.theme, scale } :: { any })
 
-	-- Scale the layout position offset (the -12 bottom margin)
 	local layout = React.useMemo(function()
 		local base = Theme.mergeLayout(config.layout)
-		-- Scale the offset components of the position
 		local pos = base.position :: UDim2
 		base.position = UDim2.new(
 			pos.X.Scale, math.round(pos.X.Offset * scale),
@@ -165,81 +74,46 @@ local function Toolbar(props: Props)
 
 	local maxSlots = layout.maxVisibleSlots :: number
 
-	-- GUI inset for mouse → ScreenGui coordinate correction
+	-- GUI inset for mouse -> ScreenGui coordinate correction
 	local guiInset = React.useMemo(function()
-		local inset = GuiService:GetGuiInset()
-		return inset
+		return GuiService:GetGuiInset()
 	end, {})
 
-	local player = Players.LocalPlayer
-
-	---------------------------------------------------------------------------
-	-- State
-	---------------------------------------------------------------------------
+	-----------------------------------------------------------------------
+	-- Slot state (React-owned)
+	-----------------------------------------------------------------------
 	local hotbarSlots, setHotbarSlots = React.useState({} :: { Types.SlotData? })
 	local backpackSlots, setBackpackSlots = React.useState({} :: { Types.SlotData })
 	local selectedIndex, setSelectedIndex = React.useState(nil :: number?)
 	local backpackOpen, setBackpackOpen = React.useState(false)
 
-	-- Drag state
-	local dragInfo, setDragInfo = React.useState(nil :: {
-		source: string,
-		index: number,
-		slotData: Types.SlotData,
-		startPos: Vector2,
-	}?)
-	local isDragging, setIsDragging = React.useState(false)
-	local mousePos, setMousePos = React.useState(Vector2.zero)
-	local hoverTarget, setHoverTarget = React.useState(nil :: {
-		targetType: string,
-		targetIndex: number,
-	}?)
-
-	-- "Just finished a drag" flag to suppress ghost clicks on buttons
-	local justDraggedRef = React.useRef(false)
-
-	-- Drag hold timer: tracks whether the hold duration has elapsed
-	local dragHoldReady, setDragHoldReady = React.useState(false)
-	local dragHoldReadyRef = React.useRef(dragHoldReady)
-	dragHoldReadyRef.current = dragHoldReady
-
-	-- Refs for stale closure avoidance in effects/callbacks
+	-- Refs for stale-closure-safe access in hooks and callbacks
 	local hotbarRef = React.useRef(hotbarSlots)
 	local backpackRef = React.useRef(backpackSlots)
 	local selectedRef = React.useRef(selectedIndex)
-	local dragInfoRef = React.useRef(dragInfo)
-	local isDraggingRef = React.useRef(isDragging)
-	local hoverTargetRef = React.useRef(hoverTarget)
 	local backpackOpenRef = React.useRef(backpackOpen)
-
 	hotbarRef.current = hotbarSlots
 	backpackRef.current = backpackSlots
 	selectedRef.current = selectedIndex
-	dragInfoRef.current = dragInfo
-	isDraggingRef.current = isDragging
-	hoverTargetRef.current = hoverTarget
 	backpackOpenRef.current = backpackOpen
 
-	---------------------------------------------------------------------------
+	-----------------------------------------------------------------------
 	-- Equip / unequip a hotbar slot (click interaction)
-	---------------------------------------------------------------------------
+	-----------------------------------------------------------------------
 	local function selectSlot(index: number)
 		local currentHotbar = hotbarRef.current
 		local currentSelected = selectedRef.current
 		local slotData = currentHotbar[index]
 
 		if not slotData or not slotData.tool then
-			-- Clicked empty slot → deselect
 			setSelectedIndex(nil)
 			return
 		end
 
-		-- Custom callback
 		if slotData.onActivated then
 			slotData.onActivated(slotData)
 		end
 
-		-- If same slot clicked again → unequip
 		if currentSelected == index then
 			local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
@@ -249,7 +123,6 @@ local function Toolbar(props: Props)
 			return
 		end
 
-		-- Equip the tool
 		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if humanoid and slotData.tool then
 			humanoid:EquipTool(slotData.tool)
@@ -257,510 +130,81 @@ local function Toolbar(props: Props)
 		setSelectedIndex(index)
 	end
 
-	---------------------------------------------------------------------------
-	-- Drag helpers
-	---------------------------------------------------------------------------
-	local function cancelDrag()
-		setDragInfo(nil)
-		setIsDragging(false)
-		setHoverTarget(nil)
-	end
-
-	local function completeDrag()
-		local drag = dragInfoRef.current
-		local hover = hoverTargetRef.current
-		local wasDragging = isDraggingRef.current
-
-		-- Flag to suppress ghost click on backpack button
-		justDraggedRef.current = true
-		task.delay(0.15, function()
-			justDraggedRef.current = false
-		end)
-
-		if not drag or not wasDragging then
-			cancelDrag()
-			return
-		end
-
-		local srcType = drag.source
-		local srcIdx = drag.index
-		local srcSlot = drag.slotData
-
-		if hover then
-			local dstType = hover.targetType
-			local dstIdx = hover.targetIndex
-
-			----------------------------------------------------------------
-			-- Drop on backpack button → move hotbar item to backpack
-			----------------------------------------------------------------
-			if dstType == "backpackButton" then
-				if srcType == "hotbar" then
-					setHotbarSlots(function(prev)
-						local new = table.clone(prev)
-						new[srcIdx] = nil
-						return new
-					end)
-					setBackpackSlots(function(prev)
-						local new = table.clone(prev)
-						table.insert(new, srcSlot)
-						return new
-					end)
-					if selectedRef.current == srcIdx then
-						setSelectedIndex(nil)
-						local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-						if humanoid then humanoid:UnequipTools() end
-					end
-				end
-				-- Dragging backpack item to backpack button does nothing
-
-			----------------------------------------------------------------
-			-- Hotbar → Hotbar: swap
-			----------------------------------------------------------------
-			elseif srcType == "hotbar" and dstType == "hotbar" then
-				setHotbarSlots(function(prev)
-					local new = table.clone(prev)
-					new[srcIdx], new[dstIdx] = new[dstIdx], new[srcIdx]
-					return new
-				end)
-				local sel = selectedRef.current
-				if sel == srcIdx then
-					setSelectedIndex(dstIdx)
-				elseif sel == dstIdx then
-					setSelectedIndex(srcIdx)
-				end
-
-			----------------------------------------------------------------
-			-- Hotbar → Backpack slot: swap or insert into empty cell
-			----------------------------------------------------------------
-			elseif srcType == "hotbar" and dstType == "backpack" then
-				local dstSlot = backpackRef.current[dstIdx]
-				if dstSlot then
-					-- Swap: backpack item goes to hotbar, hotbar item goes to backpack
-					setHotbarSlots(function(prev)
-						local new = table.clone(prev)
-						new[srcIdx] = dstSlot
-						return new
-					end)
-					setBackpackSlots(function(prev)
-						local new = table.clone(prev)
-						new[dstIdx] = srcSlot
-						return new
-					end)
-				else
-					-- Dropped on empty backpack cell → append to backpack, clear hotbar slot
-					setHotbarSlots(function(prev)
-						local new = table.clone(prev)
-						new[srcIdx] = nil
-						return new
-					end)
-					setBackpackSlots(function(prev)
-						local new = table.clone(prev)
-						table.insert(new, srcSlot)
-						return new
-					end)
-				end
-				if selectedRef.current == srcIdx then
-					setSelectedIndex(nil)
-					local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-					if humanoid then humanoid:UnequipTools() end
-				end
-
-			----------------------------------------------------------------
-			-- Backpack → Hotbar: swap (or move if hotbar slot is empty)
-			----------------------------------------------------------------
-			elseif srcType == "backpack" and dstType == "hotbar" then
-				local dstSlot = hotbarRef.current[dstIdx]
-				setHotbarSlots(function(prev)
-					local new = table.clone(prev)
-					new[dstIdx] = srcSlot
-					return new
-				end)
-				if dstSlot then
-					-- Displaced hotbar item takes the backpack slot
-					setBackpackSlots(function(prev)
-						local new = table.clone(prev)
-						new[srcIdx] = dstSlot
-						return new
-					end)
-				else
-					-- Empty hotbar slot — just remove from backpack
-					setBackpackSlots(function(prev)
-						local new = {}
-						for i, slot in prev do
-							if i ~= srcIdx then
-								table.insert(new, slot)
-							end
-						end
-						return new
-					end)
-				end
-
-			----------------------------------------------------------------
-			-- Backpack → Backpack: swap or reorder
-			----------------------------------------------------------------
-			elseif srcType == "backpack" and dstType == "backpack" then
-				local dstSlot = backpackRef.current[dstIdx]
-				if dstSlot then
-					-- Both occupied → swap
-					setBackpackSlots(function(prev)
-						local new = table.clone(prev)
-						new[srcIdx], new[dstIdx] = new[dstIdx], new[srcIdx]
-						return new
-					end)
-				else
-					-- Dragged to empty cell → item stays, nothing changes visually
-					-- (auto-arrange keeps items packed, so this is a no-op)
-				end
-			end
-		end
-		-- Drop on nothing → cancel (no change)
-
-		cancelDrag()
-	end
-
-	---------------------------------------------------------------------------
-	-- Callbacks for Slot / BackpackPanel (stable via useCallback + refs)
-	---------------------------------------------------------------------------
-	local onSlotMouseDown = React.useCallback(function(index: number, source: string)
-		local slotData: Types.SlotData?
-		if source == "hotbar" then
-			slotData = hotbarRef.current[index]
-		else
-			slotData = backpackRef.current[index]
-		end
-
-		if not slotData then
-			-- Empty slot click
+	-----------------------------------------------------------------------
+	-- Drag and drop (hook — ALL drag state is React state)
+	-----------------------------------------------------------------------
+	local drag = useDragAndDrop({
+		holdTimeClosed = dragHoldTimeClosed,
+		holdTimeOpen = dragHoldTimeOpen,
+		player = player,
+		hotbarRef = hotbarRef,
+		backpackRef = backpackRef,
+		selectedRef = selectedRef,
+		backpackOpenRef = backpackOpenRef,
+		setHotbarSlots = setHotbarSlots,
+		setBackpackSlots = setBackpackSlots,
+		setSelectedIndex = setSelectedIndex,
+		setBackpackOpen = setBackpackOpen,
+		onSlotClick = function(index: number, source: string)
 			if source == "hotbar" then
-				setSelectedIndex(nil)
+				selectSlot(index)
 			end
-			return
-		end
+		end,
+	})
 
-		local mouseLocation = UserInputService:GetMouseLocation()
-		setDragInfo({
-			source = source,
-			index = index,
-			slotData = slotData,
-			startPos = mouseLocation,
-		})
-		setMousePos(mouseLocation)
-	end, {})
+	-----------------------------------------------------------------------
+	-- Tool sync (hook)
+	-----------------------------------------------------------------------
+	useToolSync({
+		enabled = autoManage,
+		maxSlots = maxSlots,
+		hotbarRef = hotbarRef,
+		backpackRef = backpackRef,
+		setHotbarSlots = setHotbarSlots,
+		setBackpackSlots = setBackpackSlots,
+		setSelectedIndex = setSelectedIndex,
+	})
 
-	local onSlotHoverChange = React.useCallback(function(index: number, source: string, hovering: boolean)
-		if hovering then
-			setHoverTarget({
-				targetType = source,
-				targetIndex = index,
-			})
-		else
-			-- Only clear if this slot is still the hovered target
-			setHoverTarget(function(prev)
-				if prev and prev.targetType == source and prev.targetIndex == index then
-					return nil
-				end
-				return prev
+	-----------------------------------------------------------------------
+	-- Keyboard input (hook)
+	-----------------------------------------------------------------------
+	useKeyboardInput({
+		enabled = keybinds,
+		maxSlots = maxSlots,
+		hotbarRef = hotbarRef,
+		onSelectSlot = selectSlot,
+		onToggleBackpack = function()
+			setBackpackOpen(function(prev)
+				return not prev
 			end)
-		end
-	end, {})
+		end,
+	})
 
-	---------------------------------------------------------------------------
-	-- Track whether backpack was already open before a drag started
-	---------------------------------------------------------------------------
-	local backpackWasOpenRef = React.useRef(false)
-
-	---------------------------------------------------------------------------
-	-- Effect: drag hold timer (pick duration based on backpack open/closed)
-	---------------------------------------------------------------------------
-	React.useEffect(function()
-		if not dragInfo then
-			-- Reset hold readiness when drag is cancelled/completed
-			setDragHoldReady(false)
-			return function() end
-		end
-
-		-- Choose hold time: shorter when backpack is already open for quick rearranging
-		local holdTime = if backpackOpenRef.current then dragHoldTimeOpen else dragHoldTimeClosed
-
-		if holdTime <= 0 then
-			setDragHoldReady(true)
-			return function() end
-		end
-
-		-- Start a timer; drag becomes ready after holdTime seconds
-		setDragHoldReady(false)
-		local cancelled = false
-		task.delay(holdTime, function()
-			if not cancelled then
-				setDragHoldReady(true)
-			end
-		end)
-
-		return function()
-			cancelled = true
-		end
-	end, { dragInfo } :: { any })
-
-	---------------------------------------------------------------------------
-	-- Effect: drag tracking (mouse move + mouse up via UserInputService)
-	---------------------------------------------------------------------------
-	React.useEffect(function()
-		if not dragInfo then
-			return function() end
-		end
-
-		local moveConn = UserInputService.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement
-				or input.UserInputType == Enum.UserInputType.Touch then
-				local pos = Vector2.new(input.Position.X, input.Position.Y)
-				setMousePos(pos)
-
-				if not isDraggingRef.current and dragInfoRef.current then
-					local delta = pos - dragInfoRef.current.startPos
-					if delta.Magnitude > DRAG_THRESHOLD and dragHoldReadyRef.current then
-						setIsDragging(true)
-						-- Auto-open backpack when drag starts
-						setBackpackOpen(function(prev)
-							backpackWasOpenRef.current = prev
-							return true
-						end)
-					end
-				end
-			end
-		end)
-
-		local upConn = UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1
-				or input.UserInputType == Enum.UserInputType.Touch then
-				if isDraggingRef.current then
-					completeDrag()
-					-- After drag completes, restore backpack open state to what it was before
-					if not backpackWasOpenRef.current then
-						setBackpackOpen(false)
-					end
-				else
-					-- Was a click, not a drag → equip/unequip if hotbar
-					local info = dragInfoRef.current
-					if info and info.source == "hotbar" then
-						selectSlot(info.index)
-					end
-					cancelDrag()
-				end
-			end
-		end)
-
-		return function()
-			moveConn:Disconnect()
-			upConn:Disconnect()
-		end
-	end, { dragInfo } :: { any })
-
-	---------------------------------------------------------------------------
-	-- Effect: auto-manage tools from Backpack / Character
-	---------------------------------------------------------------------------
-	React.useEffect(function()
-		if not autoManage then
-			return function() end
-		end
-
-		local alive = true
-		local connections: { RBXScriptConnection } = {}
-
-		local function refresh()
-			if not alive then
-				return
-			end
-
-			local tools = gatherTools(player)
-			local currentHotbar = hotbarRef.current
-			local currentBackpack = backpackRef.current
-
-			-- Build set of tool instances that still exist
-			local toolExists: { [Tool]: boolean } = {}
-			for _, tool in tools do
-				toolExists[tool] = true
-			end
-
-			-- Preserve existing assignments, remove dead tools
-			local newHotbar: { Types.SlotData? } = {}
-			for i = 1, maxSlots do
-				local slot = currentHotbar[i]
-				if slot and slot.tool and toolExists[slot.tool] then
-					newHotbar[i] = slot
-				end
-			end
-
-			local newBackpack: { Types.SlotData } = {}
-			for _, slot in currentBackpack do
-				if slot.tool and toolExists[slot.tool] then
-					table.insert(newBackpack, slot)
-				end
-			end
-
-			-- Track what's already assigned
-			local assigned: { [Tool]: boolean } = {}
-			for _, slot in newHotbar do
-				if slot and slot.tool then
-					assigned[slot.tool] = true
-				end
-			end
-			for _, slot in newBackpack do
-				if slot.tool then
-					assigned[slot.tool] = true
-				end
-			end
-
-			-- Place unassigned (new) tools: fill hotbar first, overflow to backpack
-			local orderCounter = #tools
-			for _, tool in tools do
-				if not assigned[tool] then
-					local placed = false
-					for j = 1, maxSlots do
-						if not newHotbar[j] then
-							orderCounter += 1
-							newHotbar[j] = toolToSlotData(tool, orderCounter)
-							placed = true
-							break
-						end
-					end
-					if not placed then
-						orderCounter += 1
-						table.insert(newBackpack, toolToSlotData(tool, orderCounter))
-					end
-				end
-			end
-
-			setHotbarSlots(newHotbar)
-			setBackpackSlots(newBackpack)
-
-			-- Update selection to follow the currently equipped tool
-			local character = player.Character
-			if character then
-				local equippedTool = character:FindFirstChildOfClass("Tool")
-				if equippedTool then
-					for i = 1, maxSlots do
-						local sd = newHotbar[i]
-						if sd and sd.tool == equippedTool then
-							setSelectedIndex(i)
-							return
-						end
-					end
-					-- Equipped tool isn't on hotbar → deselect
-					setSelectedIndex(nil)
-				else
-					setSelectedIndex(nil)
-				end
-			end
-		end
-
-		local function watchCharacter(char: Model)
-			table.insert(connections, char.ChildAdded:Connect(refresh))
-			table.insert(connections, char.ChildRemoved:Connect(refresh))
-			task.defer(refresh)
-		end
-
-		-- Spawn for the yielding WaitForChild call
-		task.spawn(function()
-			local backpack = player:WaitForChild("Backpack", 10)
-			if not alive then
-				return
-			end
-			if backpack then
-				table.insert(connections, backpack.ChildAdded:Connect(refresh))
-				table.insert(connections, backpack.ChildRemoved:Connect(refresh))
-			end
-			refresh()
-		end)
-
-		table.insert(connections, player.CharacterAdded:Connect(function(char)
-			watchCharacter(char)
-		end))
-
-		if player.Character then
-			watchCharacter(player.Character)
-		end
-
-		refresh()
-
-		return function()
-			alive = false
-			for _, conn in connections do
-				conn:Disconnect()
-			end
-		end
-	end, { autoManage } :: { any })
-
-	---------------------------------------------------------------------------
-	-- Effect: keyboard input (1-9 keys, backquote for backpack panel)
-	---------------------------------------------------------------------------
-	React.useEffect(function()
-		if not keybinds then
-			return function() end
-		end
-
-		local conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed then
-				return
-			end
-
-			-- Number keys 1-9 → select hotbar slot
-			local slotNum = NUMBER_KEYS[input.KeyCode]
-			if slotNum and slotNum <= maxSlots then
-				local slot = hotbarRef.current[slotNum]
-				if slot then
-					selectSlot(slotNum)
-				end
-				return
-			end
-
-			-- Backquote (`) toggles backpack panel
-			if input.KeyCode == Enum.KeyCode.Backquote then
-				setBackpackOpen(function(prev)
-					return not prev
-				end)
-			end
-		end)
-
-		return function()
-			conn:Disconnect()
-		end
-	end, { keybinds } :: { any })
-
-	---------------------------------------------------------------------------
+	-----------------------------------------------------------------------
 	-- Render
-	---------------------------------------------------------------------------
+	-----------------------------------------------------------------------
 	local slotSize = theme.slotSize :: number
 	local padding = theme.slotPadding :: number
 	local isHorizontal = layout.orientation == "Horizontal"
 
-	-- Build slot children for the hotbar
+	-- Build hotbar slot children
 	local barChildren: { [string]: any } = {}
 
 	-- Layout
-	if isHorizontal then
-		barChildren["Layout"] = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			Padding = UDim.new(0, padding),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-		})
-	else
-		barChildren["Layout"] = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, padding),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-		})
-	end
+	barChildren["Layout"] = React.createElement("UIListLayout", {
+		FillDirection = if isHorizontal then Enum.FillDirection.Horizontal else Enum.FillDirection.Vertical,
+		Padding = UDim.new(0, padding),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+	})
 
 	-- Hotbar slots
 	for i = 1, maxSlots do
-		local isDragOverSlot = isDragging and hoverTarget
-			and hoverTarget.targetType == "hotbar" and hoverTarget.targetIndex == i
-		local isBeingDraggedSlot = isDragging and dragInfo
-			and dragInfo.source == "hotbar" and dragInfo.index == i
+		local isDragOverSlot = drag.isDragging and drag.hoverTarget
+			and drag.hoverTarget.targetType == "hotbar" and drag.hoverTarget.targetIndex == i
+		local isBeingDraggedSlot = drag.isDragging and drag.dragInfo
+			and drag.dragInfo.source == "hotbar" and drag.dragInfo.index == i
 
 		barChildren["Slot_" .. i] = React.createElement(Slot, {
 			index = i,
@@ -768,8 +212,8 @@ local function Toolbar(props: Props)
 			isSelected = selectedIndex == i,
 			theme = theme,
 			source = "hotbar",
-			onMouseDown = onSlotMouseDown,
-			onHoverChange = onSlotHoverChange,
+			onMouseDown = drag.onSlotMouseDown,
+			onHoverChange = drag.onSlotHoverChange,
 			isDragOver = isDragOverSlot or false,
 			isBeingDragged = isBeingDraggedSlot or false,
 		})
@@ -777,8 +221,9 @@ local function Toolbar(props: Props)
 
 	-- Backpack toggle button (also a drop target during drag)
 	local backpackBtnSize = theme.backpackButtonSize :: number
-	local isBackpackBtnDragOver = isDragging and hoverTarget
-		and hoverTarget.targetType == "backpackButton"
+	local cornerRadius = theme.slotCornerRadius :: number
+	local isBackpackBtnDragOver = drag.isDragging and drag.hoverTarget
+		and drag.hoverTarget.targetType == "backpackButton"
 
 	barChildren["BackpackBtn"] = React.createElement("ImageButton", {
 		Size = UDim2.fromOffset(backpackBtnSize, backpackBtnSize),
@@ -792,37 +237,25 @@ local function Toolbar(props: Props)
 		LayoutOrder = maxSlots + 1,
 
 		[React.Event.Activated] = function()
-			-- Suppress toggle if we just finished a drag on this button
-			if justDraggedRef.current then
+			if drag.justDraggedRef.current then
 				return
 			end
 			setBackpackOpen(function(prev)
 				return not prev
 			end)
 		end,
+		-- Register as drop target during drag. The visual check
+		-- (isBackpackBtnDragOver) already guards on drag.isDragging,
+		-- so unconditional hover reporting is safe.
 		[React.Event.MouseEnter] = function()
-			-- Register as drop target during drag
-			setHoverTarget(function(prev)
-				if dragInfoRef.current then
-					return {
-						targetType = "backpackButton",
-						targetIndex = 0,
-					}
-				end
-				return prev
-			end)
+			drag.onSlotHoverChange(0, "backpackButton", true)
 		end,
 		[React.Event.MouseLeave] = function()
-			setHoverTarget(function(prev)
-				if prev and prev.targetType == "backpackButton" then
-					return nil
-				end
-				return prev
-			end)
+			drag.onSlotHoverChange(0, "backpackButton", false)
 		end,
 	}, {
 		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, theme.slotCornerRadius),
+			CornerRadius = UDim.new(0, cornerRadius),
 		}),
 		Stroke = React.createElement("UIStroke", {
 			Color = if isBackpackBtnDragOver
@@ -836,7 +269,7 @@ local function Toolbar(props: Props)
 	})
 
 	-- Compute bar size
-	local itemCount = maxSlots + 1 -- +1 for backpack button
+	local itemCount = maxSlots + 1
 	local barWidth, barHeight
 	if isHorizontal then
 		barWidth = (itemCount * slotSize) + ((itemCount - 1) * padding) + padding * 2
@@ -856,39 +289,21 @@ local function Toolbar(props: Props)
 	-- Backpack panel drag state
 	local bpDragOverIdx: number? = nil
 	local bpDragFromIdx: number? = nil
-	if isDragging and hoverTarget and hoverTarget.targetType == "backpack" then
-		bpDragOverIdx = hoverTarget.targetIndex
+	if drag.isDragging and drag.hoverTarget and drag.hoverTarget.targetType == "backpack" then
+		bpDragOverIdx = drag.hoverTarget.targetIndex
 	end
-	if isDragging and dragInfo and dragInfo.source == "backpack" then
-		bpDragFromIdx = dragInfo.index
+	if drag.isDragging and drag.dragInfo and drag.dragInfo.source == "backpack" then
+		bpDragFromIdx = drag.dragInfo.index
 	end
 
-	-- Drag ghost (floating image that follows cursor)
+	-- Drag ghost
 	local ghostElement = nil
-	if isDragging and dragInfo then
-		local ghostSize = slotSize * 0.8
-		ghostElement = React.createElement("ImageLabel", {
-			Image = dragInfo.slotData.icon,
-			ImageColor3 = theme.iconColor,
-			Size = UDim2.fromOffset(ghostSize, ghostSize),
-			Position = UDim2.fromOffset(
-				mousePos.X - ghostSize / 2,
-				mousePos.Y - guiInset.Y - ghostSize / 2
-			),
-			BackgroundColor3 = theme.slotBackgroundColor,
-			BackgroundTransparency = 0.3,
-			BorderSizePixel = 0,
-			ZIndex = 100,
-			ScaleType = Enum.ScaleType.Fit,
-		}, {
-			Corner = React.createElement("UICorner", {
-				CornerRadius = UDim.new(0, theme.slotCornerRadius),
-			}),
-			Stroke = React.createElement("UIStroke", {
-				Color = theme.slotSelectedBorderColor,
-				Thickness = theme.slotBorderWidth,
-				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			}),
+	if drag.isDragging and drag.dragInfo then
+		ghostElement = React.createElement(DragGhost, {
+			slotData = drag.dragInfo.slotData,
+			mousePos = drag.mousePos,
+			guiInset = guiInset,
+			theme = theme,
 		})
 	end
 
@@ -915,11 +330,11 @@ local function Toolbar(props: Props)
 				onClose = function()
 					setBackpackOpen(false)
 				end,
-				onSlotMouseDown = onSlotMouseDown,
-				onSlotHoverChange = onSlotHoverChange,
+				onSlotMouseDown = drag.onSlotMouseDown,
+				onSlotHoverChange = drag.onSlotHoverChange,
 				dragOverIndex = bpDragOverIdx,
 				dragFromIndex = bpDragFromIdx,
-				isDragging = isDragging,
+				isDragging = drag.isDragging,
 				backpackSlotCount = backpackSlotCount,
 				showEmptySlotBG = showEmptySlotBG,
 			}),
@@ -931,4 +346,3 @@ local function Toolbar(props: Props)
 end
 
 return Toolbar
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
