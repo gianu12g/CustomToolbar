@@ -52,7 +52,7 @@ local function Slot(props: Props)
 	local isDragOver = props.isDragOver or false
 	local isBeingDragged = props.isBeingDragged or false
 	local showEmptyBG = if props.showEmptySlotBG == nil then true else props.showEmptySlotBG
-	local isEmptyHidden = not slotData and not showEmptyBG and not isDragOver
+	local isEmptyHidden = not slotData and not showEmptyBG
 
 	local slotSize = theme.slotSize :: number
 	local cornerRadius = theme.slotCornerRadius :: number
