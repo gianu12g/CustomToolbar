@@ -9,8 +9,11 @@
 		- Category tabs: shown to the right of the "Backpack" title when
 		  at least one tool has a Category attribute. "All" is always first.
 		  Tabs only appear for categories that have at least one item.
-		- Expand mode (expandBackpack config): when true, the panel grows
-		  downward to fit all items instead of clamping to a fixed cell count.
+		- Expand mode (expandBackpack config): when true and there are more
+		  items than the visible grid can show, the grid becomes a scrollable
+		  frame. The panel keeps its fixed size; the player scrolls down to
+		  see overflow items. Games that prefer a limited backpack keep this
+		  false (default).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -164,33 +167,43 @@ local function BackpackPanel(props: Props)
 	------------------------------------------------------------------------
 	local slotCount = #visibleSlots
 
-	local totalCells: number
-	if expandBackpack then
-		-- Grow to fit: always show at least minRows, expand if items exceed that
-		local minCells = columns * minRows
-		totalCells = math.max(slotCount + columns, minCells)
-		local rows = math.ceil(totalCells / columns)
-		totalCells = rows * columns
-	elseif props.backpackSlotCount and props.backpackSlotCount > 0 then
-		-- Fixed slot count from config — snap up to full rows
-		local rows = math.ceil(props.backpackSlotCount / columns)
-		totalCells = rows * columns
+	-- Visible rows: determines the panel's fixed height
+	local visibleCells: number
+	if props.backpackSlotCount and props.backpackSlotCount > 0 then
+		local r = math.ceil(props.backpackSlotCount / columns)
+		visibleCells = r * columns
 	else
-		-- Auto-calc: at least minRows of slots so there are empty drop targets
 		local minCells = columns * minRows
-		totalCells = math.max(slotCount + columns, minCells) -- always at least one extra row
-		local rows = math.ceil(totalCells / columns)
-		totalCells = rows * columns -- snap to full rows
+		visibleCells = math.max(slotCount + columns, minCells)
+		local r = math.ceil(visibleCells / columns)
+		visibleCells = r * columns
+	end
+	local visibleRows = math.ceil(visibleCells / columns)
+
+	-- Total cells: when expandBackpack is true and items overflow, add extra
+	-- rows so the grid scrolls. Otherwise clamp to the visible cell count.
+	local totalCells: number
+	if expandBackpack and slotCount > visibleCells then
+		-- Enough cells for all items + one extra row of empty drop targets
+		totalCells = slotCount + columns
+		local r = math.ceil(totalCells / columns)
+		totalCells = r * columns
+	else
+		totalCells = visibleCells
 	end
 	local rows = math.ceil(totalCells / columns)
 
 	local gridWidth = (columns * slotSize) + ((columns - 1) * padding) + padding * 2
-	local gridHeight = (rows * slotSize) + ((rows - 1) * padding) + padding * 2
+	local visibleGridHeight = (visibleRows * slotSize) + ((visibleRows - 1) * padding) + padding * 2
+	local fullGridHeight = (rows * slotSize) + ((rows - 1) * padding) + padding * 2
 
-	-- Add space for title bar (and category tabs row if categories exist)
+	-- The panel is always sized to the visible (fixed) grid height
 	local titleHeight = math.round(28 * s)
 	local tabRowHeight = if hasCategories then math.round(26 * s) else 0
-	local panelHeight = gridHeight + titleHeight + tabRowHeight
+	local panelHeight = visibleGridHeight + titleHeight + tabRowHeight
+
+	-- Whether scrolling is needed
+	local needsScroll = expandBackpack and (fullGridHeight > visibleGridHeight)
 
 	if not props.visible then
 		return nil
@@ -322,64 +335,96 @@ local function BackpackPanel(props: Props)
 
 	-- Grid container (offset below title + tabs)
 	local gridTopOffset = titleHeight + tabRowHeight
-	children["GridContainer"] = React.createElement(
-		"Frame",
-		{
-			Size = UDim2.new(1, 0, 1, -gridTopOffset),
-			Position = UDim2.fromOffset(0, gridTopOffset),
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			ClipsDescendants = true,
-			ZIndex = 5,
-		},
-		(function()
-			local gridChildren: { [string]: any } = {
-				Padding = React.createElement("UIPadding", {
-					PaddingTop = UDim.new(0, padding),
-					PaddingBottom = UDim.new(0, padding),
-					PaddingLeft = UDim.new(0, padding),
-					PaddingRight = UDim.new(0, padding),
-				}),
-				Grid = React.createElement("UIGridLayout", {
-					CellSize = UDim2.fromOffset(slotSize, slotSize),
-					CellPadding = UDim2.fromOffset(padding, padding),
-					FillDirection = Enum.FillDirection.Horizontal,
-					SortOrder = Enum.SortOrder.LayoutOrder,
-					FillDirectionMaxCells = columns,
-				}),
-			}
 
-			-- Render ALL cells (filled slots + empty slots)
-			for i = 1, totalCells do
-				local slotData = visibleSlots[i] -- nil for empty cells
-				gridChildren["Slot_" .. i] = React.createElement(Slot, {
-					index = i,
-					slotData = slotData,
-					isSelected = false,
-					theme = theme,
-					source = "backpack",
-					onMouseDown = wrappedMouseDown,
-					onHoverChange = wrappedHoverChange,
-					isDragOver = resolvedDragOverIndex == i,
-					isBeingDragged = resolvedDragFromIndex == i,
-					showEmptySlotBG = props.showEmptySlotBG,
-				})
-			end
+	-- Build grid cell children (shared between scroll and non-scroll paths)
+	local gridChildren: { [string]: any } = {
+		Padding = React.createElement("UIPadding", {
+			PaddingTop = UDim.new(0, padding),
+			PaddingBottom = UDim.new(0, padding),
+			PaddingLeft = UDim.new(0, padding),
+			PaddingRight = UDim.new(0, padding),
+		}),
+		Grid = React.createElement("UIGridLayout", {
+			CellSize = UDim2.fromOffset(slotSize, slotSize),
+			CellPadding = UDim2.fromOffset(padding, padding),
+			FillDirection = Enum.FillDirection.Horizontal,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			FillDirectionMaxCells = columns,
+		}),
+	}
 
-			return gridChildren
-		end)()
-	)
+	-- Render ALL cells (filled slots + empty slots)
+	for i = 1, totalCells do
+		local slotData = visibleSlots[i] -- nil for empty cells
+		gridChildren["Slot_" .. i] = React.createElement(Slot, {
+			index = i,
+			slotData = slotData,
+			isSelected = false,
+			theme = theme,
+			source = "backpack",
+			onMouseDown = wrappedMouseDown,
+			onHoverChange = wrappedHoverChange,
+			isDragOver = resolvedDragOverIndex == i,
+			isBeingDragged = resolvedDragFromIndex == i,
+			showEmptySlotBG = props.showEmptySlotBG,
+		})
+	end
+
+	if needsScroll then
+		-- Scrollable grid: panel stays fixed size, content scrolls vertically
+		children["GridContainer"] = React.createElement(
+			"ScrollingFrame",
+			{
+				Size = UDim2.new(1, 0, 1, -gridTopOffset),
+				Position = UDim2.fromOffset(0, gridTopOffset),
+				CanvasSize = UDim2.fromOffset(0, fullGridHeight),
+				ScrollBarThickness = math.round(4 * s),
+				ScrollBarImageColor3 = theme.slotBorderColor,
+				ScrollBarImageTransparency = 0.3,
+				ScrollingDirection = Enum.ScrollingDirection.Y,
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				ClipsDescendants = true,
+				ZIndex = 5,
+				-- Elastic scrolling for a polished feel
+				ElasticBehavior = Enum.ElasticBehavior.Always,
+			},
+			gridChildren
+		)
+	else
+		-- Non-scrollable: standard fixed Frame (original behaviour)
+		children["GridContainer"] = React.createElement(
+			"Frame",
+			{
+				Size = UDim2.new(1, 0, 1, -gridTopOffset),
+				Position = UDim2.fromOffset(0, gridTopOffset),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				ClipsDescendants = true,
+				ZIndex = 5,
+			},
+			gridChildren
+		)
+	end
 
 	--------------------------------------------------------------
 	-- Drag overlay: transparent frame covering the entire grid
 	-- area (including padding gaps) that resolves cursor position
 	-- to the nearest cell index. Only active during drags so it
 	-- doesn't interfere with normal click/hover on slots.
+	--
+	-- When the grid is scrollable the overlay sits inside the
+	-- ScrollingFrame so AbsolutePosition already accounts for
+	-- the canvas scroll offset.
 	--------------------------------------------------------------
 	if props.isDragging then
-		children["DragOverlay"] = React.createElement("Frame", {
-			Size = UDim2.new(1, 0, 1, -gridTopOffset),
-			Position = UDim2.fromOffset(0, gridTopOffset),
+		local dragOverlay = React.createElement("Frame", {
+			Size = if needsScroll
+				then UDim2.fromOffset(gridWidth, fullGridHeight)
+				else UDim2.new(1, 0, 1, -gridTopOffset),
+			Position = if needsScroll
+				then UDim2.fromOffset(0, 0)
+				else UDim2.fromOffset(0, gridTopOffset),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ZIndex = 10, -- above grid cells
@@ -415,6 +460,14 @@ local function BackpackPanel(props: Props)
 				end
 			end,
 		})
+
+		if needsScroll then
+			-- Insert overlay into the ScrollingFrame's children so it
+			-- scrolls with the grid and AbsolutePosition is correct.
+			gridChildren["DragOverlay"] = dragOverlay
+		else
+			children["DragOverlay"] = dragOverlay
+		end
 	end
 
 	return React.createElement("Frame", {
