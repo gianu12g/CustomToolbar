@@ -126,7 +126,7 @@ local toolbar = CustomToolbar.new({
 	dragHoldTime = 0.5, -- seconds to hold before drag starts (backpack closed)
 	dragHoldTimeOpen = 0.05, -- seconds to hold before drag starts (backpack open)
 	showEmptySlotBG = false,
-	expandBackpack = false, -- true = grid scrolls when items exceed visible slots (panel stays fixed size)
+	expandBackpack = true, -- true = grid scrolls when items exceed visible slots (panel stays fixed size)
 	maxCategoryTabs = 10, -- max category tabs shown (excludes "All"); nil = default 4
 })
 toolbar:Mount()
