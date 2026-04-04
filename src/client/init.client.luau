@@ -10,11 +10,18 @@
 		-- Optional: override the gradient preset for one specific tool
 		tool:SetAttribute("OutlinePreset", "Toxic")
 
+		-- Category (enables filter tabs in the backpack panel)
+		tool:SetAttribute("Category", "Weapons")
+
 	Built-in rarity tiers:
 		Common, Uncommon, Rare, Epic, Legendary, Mythic
 
 	Available gradient presets:
 		"Rainbow", "Fire", "Ice", "Toxic", "Galaxy"
+
+	Category tabs appear automatically in the backpack title bar
+	whenever at least one tool has a Category attribute set.
+	Only categories with items are shown. "All" is always first.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -119,6 +126,7 @@ local toolbar = CustomToolbar.new({
 	dragHoldTime = 0.5, -- seconds to hold before drag starts (backpack closed)
 	dragHoldTimeOpen = 0.05, -- seconds to hold before drag starts (backpack open)
 	showEmptySlotBG = false,
+	expandBackpack = true, -- true = panel grows downward to fit all items
 })
 toolbar:Mount()
 
@@ -290,3 +298,4 @@ local VioletSteelTheme: CustomToolbar.ThemeConfig = {
 -- 				orientation = "Horizontal",
 -- 				position = UDim2.fromScale(0.5, 0.98),
 ]]
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            

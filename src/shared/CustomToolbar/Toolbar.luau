@@ -49,6 +49,7 @@ local function Toolbar(props: Props)
 	local dragHoldTimeOpen = config.dragHoldTimeOpen or 0
 	local backpackSlotCount = config.backpackSlotCount
 	local showEmptySlotBG = if config.showEmptySlotBG == nil then true else config.showEmptySlotBG
+	local expandBackpack = if config.expandBackpack == nil then false else config.expandBackpack
 
 	local player = Players.LocalPlayer
 
@@ -337,6 +338,7 @@ local function Toolbar(props: Props)
 				isDragging = drag.isDragging,
 				backpackSlotCount = backpackSlotCount,
 				showEmptySlotBG = showEmptySlotBG,
+				expandBackpack = expandBackpack,
 			}),
 		}),
 

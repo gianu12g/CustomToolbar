@@ -48,11 +48,16 @@ end
 
 local function toolToSlotData(tool: Tool, order: number): Types.SlotData
 	local rarity: string? = nil
+	local category: string? = nil
 	local outlinePreset: string? = nil
 	pcall(function()
 		local r = tool:GetAttribute("Rarity")
 		if type(r) == "string" and r ~= "" then
 			rarity = r
+		end
+		local c = tool:GetAttribute("Category")
+		if type(c) == "string" and c ~= "" then
+			category = c
 		end
 		local p = tool:GetAttribute("OutlinePreset")
 		if type(p) == "string" and p ~= "" then
@@ -67,6 +72,7 @@ local function toolToSlotData(tool: Tool, order: number): Types.SlotData
 		tool = tool,
 		order = order,
 		rarity = rarity,
+		category = category,
 		outlinePreset = outlinePreset,
 		onActivated = nil,
 	}

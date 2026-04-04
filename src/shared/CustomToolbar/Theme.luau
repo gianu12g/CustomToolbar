@@ -66,6 +66,13 @@ local DEFAULT_THEME: Types.ThemeConfig = {
 	rarityColors = DEFAULT_RARITY_COLORS,
 	rarityPresets = DEFAULT_RARITY_PRESETS,
 
+	-- Category tabs
+	categoryTabFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold),
+	categoryTabColor = Color3.fromRGB(150, 150, 150),
+	categoryTabActiveColor = Color3.fromRGB(255, 255, 255),
+	categoryTabUnderlineColor = Color3.fromRGB(0, 162, 255),
+	categoryTabSize = 12,
+
 	-- Animations
 	selectAnimationSpeed = 0.15,
 	hoverAnimationSpeed = 0.1,
@@ -143,6 +150,7 @@ local SCALABLE_KEYS: { [string]: boolean } = {
 	nameSize = true,
 	backpackButtonSize = true,
 	panelCornerRadius = true,
+	categoryTabSize = true,
 }
 
 --- Return a copy of the theme with pixel values multiplied by `scale`.
