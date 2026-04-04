@@ -17,11 +17,10 @@ local DEFAULT_RARITY_COLORS: { [string]: Color3 } = {
 }
 
 -- Default outline preset per rarity tier.
--- nil / absent = use the single-colour shine gradient.
+-- Empty by default — all rarities use their static colour from rarityColors.
+-- Assign a preset to upgrade a tier to an animated gradient border.
 -- Valid values: "Rainbow", "Fire", "Ice", "Toxic", "Galaxy"
-local DEFAULT_RARITY_PRESETS: { [string]: string } = {
-	Mythic = "Rainbow",
-}
+local DEFAULT_RARITY_PRESETS: { [string]: string } = {}
 
 local DEFAULT_THEME: Types.ThemeConfig = {
 	-- Slot visuals
@@ -73,9 +72,9 @@ local DEFAULT_THEME: Types.ThemeConfig = {
 	categoryTabUnderlineColor = Color3.fromRGB(0, 162, 255),
 	categoryTabSize = 12,
 
-	-- Animations
-	selectAnimationSpeed = 0.15,
-	hoverAnimationSpeed = 0.1,
+	-- Animations (0 = instant / no tween; increase to add polish)
+	selectAnimationSpeed = 0,
+	hoverAnimationSpeed = 0,
 }
 
 local DEFAULT_LAYOUT: Types.LayoutConfig = {
