@@ -50,6 +50,7 @@ local function Toolbar(props: Props)
 	local backpackSlotCount = config.backpackSlotCount
 	local showEmptySlotBG = if config.showEmptySlotBG == nil then true else config.showEmptySlotBG
 	local expandBackpack = if config.expandBackpack == nil then false else config.expandBackpack
+	local maxCategoryTabs = config.maxCategoryTabs
 
 	local player = Players.LocalPlayer
 
@@ -339,6 +340,7 @@ local function Toolbar(props: Props)
 				backpackSlotCount = backpackSlotCount,
 				showEmptySlotBG = showEmptySlotBG,
 				expandBackpack = expandBackpack,
+				maxCategoryTabs = maxCategoryTabs,
 			}),
 		}),
 

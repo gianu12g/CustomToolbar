@@ -3,14 +3,9 @@
 registry = "test"
 
 [[package]]
-name = "arxkdev/ezvisualz"
-version = "0.0.6"
-dependencies = []
-
-[[package]]
 name = "gianu/customtoolbar"
 version = "0.1.0"
-dependencies = [["ReactRoblox", "jsdotlua/react-roblox@17.2.1"], ["ezvisualz", "arxkdev/ezvisualz@0.0.6"], ["react", "jsdotlua/react@17.2.1"]]
+dependencies = [["ReactRoblox", "jsdotlua/react-roblox@17.2.1"], ["react", "jsdotlua/react@17.2.1"]]
 
 [[package]]
 name = "jsdotlua/boolean"

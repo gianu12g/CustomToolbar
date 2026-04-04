@@ -38,6 +38,7 @@ type Props = {
 	backpackSlotCount: number?, -- fixed total cells to display (overrides auto-calc)
 	showEmptySlotBG: boolean?,  -- passed through to Slot for empty cell visibility
 	expandBackpack: boolean?,   -- grow panel to fit all items (ignores backpackSlotCount cap)
+	maxCategoryTabs: number?,   -- max category tabs shown, excludes "All" (default 4)
 }
 
 ---------------------------------------------------------------------------
@@ -89,12 +90,27 @@ local function BackpackPanel(props: Props)
 	local minRows = props.minRows or 3
 	local expandBackpack = props.expandBackpack or false
 
+	-- Ref to read scroll offset for drag overlay cell calculation.
+	-- Declared here (before any early return) to satisfy React hook ordering.
+	local scrollRef = React.useRef(nil :: any)
+
 	------------------------------------------------------------------------
 	-- Category tab state
 	------------------------------------------------------------------------
+	local maxTabs = props.maxCategoryTabs or 4
+
 	local categories = React.useMemo(function()
-		return getCategories(props.slots)
-	end, { props.slots } :: { any })
+		local all = getCategories(props.slots)
+		-- Cap to maxTabs so the tab row never overflows the panel width
+		if #all > maxTabs then
+			local capped: { string } = {}
+			for i = 1, maxTabs do
+				capped[i] = all[i]
+			end
+			return capped
+		end
+		return all
+	end, { props.slots, maxTabs } :: { any })
 
 	local hasCategories = #categories > 0
 
@@ -386,8 +402,14 @@ local function BackpackPanel(props: Props)
 				BorderSizePixel = 0,
 				ClipsDescendants = true,
 				ZIndex = 5,
-				-- Elastic scrolling for a polished feel
 				ElasticBehavior = Enum.ElasticBehavior.Always,
+				-- Capture ref so the drag overlay can read CanvasPosition
+				[React.Change.CanvasPosition] = function(rbx)
+					scrollRef.current = rbx
+				end,
+				ref = function(rbx)
+					scrollRef.current = rbx
+				end,
 			},
 			gridChildren
 		)
@@ -408,23 +430,20 @@ local function BackpackPanel(props: Props)
 	end
 
 	--------------------------------------------------------------
-	-- Drag overlay: transparent frame covering the entire grid
+	-- Drag overlay: transparent frame covering the visible grid
 	-- area (including padding gaps) that resolves cursor position
 	-- to the nearest cell index. Only active during drags so it
 	-- doesn't interfere with normal click/hover on slots.
 	--
-	-- When the grid is scrollable the overlay sits inside the
-	-- ScrollingFrame so AbsolutePosition already accounts for
-	-- the canvas scroll offset.
+	-- Always lives outside the ScrollingFrame as a panel child
+	-- so it only covers the visible viewport. When the grid is
+	-- scrollable, the scroll offset is added to the cursor Y
+	-- before computing the cell index.
 	--------------------------------------------------------------
 	if props.isDragging then
-		local dragOverlay = React.createElement("Frame", {
-			Size = if needsScroll
-				then UDim2.fromOffset(gridWidth, fullGridHeight)
-				else UDim2.new(1, 0, 1, -gridTopOffset),
-			Position = if needsScroll
-				then UDim2.fromOffset(0, 0)
-				else UDim2.fromOffset(0, gridTopOffset),
+		children["DragOverlay"] = React.createElement("Frame", {
+			Size = UDim2.new(1, 0, 1, -gridTopOffset),
+			Position = UDim2.fromOffset(0, gridTopOffset),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ZIndex = 10, -- above grid cells
@@ -438,6 +457,11 @@ local function BackpackPanel(props: Props)
 				local absPos = rbx.AbsolutePosition
 				local cursorX = input.Position.X - absPos.X
 				local cursorY = input.Position.Y - absPos.Y
+
+				-- When scrollable, offset cursor by how far the canvas has scrolled
+				if needsScroll and scrollRef.current then
+					cursorY = cursorY + scrollRef.current.CanvasPosition.Y
+				end
 
 				-- Account for the grid padding
 				cursorX = cursorX - padding
@@ -460,14 +484,6 @@ local function BackpackPanel(props: Props)
 				end
 			end,
 		})
-
-		if needsScroll then
-			-- Insert overlay into the ScrollingFrame's children so it
-			-- scrolls with the grid and AbsolutePosition is correct.
-			gridChildren["DragOverlay"] = dragOverlay
-		else
-			children["DragOverlay"] = dragOverlay
-		end
 	end
 
 	return React.createElement("Frame", {
