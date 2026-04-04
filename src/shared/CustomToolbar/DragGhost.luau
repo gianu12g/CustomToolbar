@@ -3,6 +3,10 @@
 	CustomToolbar – DragGhost
 	Floating image that follows the cursor during a drag operation.
 	Pure render component — zero state, zero logic.
+
+	mousePos is expected in viewport space (from GetMouseLocation),
+	which maps directly to the ScreenGui with IgnoreGuiInset = false.
+	No GUI inset correction is needed.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,7 +17,6 @@ local Types = require(script.Parent.Types)
 type Props = {
 	slotData: Types.SlotData,
 	mousePos: Vector2,
-	guiInset: Vector2,
 	theme: Types.ThemeConfig,
 }
 
@@ -29,7 +32,7 @@ local function DragGhost(props: Props)
 		Size = UDim2.fromOffset(ghostSize, ghostSize),
 		Position = UDim2.fromOffset(
 			props.mousePos.X - ghostSize / 2,
-			props.mousePos.Y - props.guiInset.Y - ghostSize / 2
+			props.mousePos.Y - ghostSize / 2
 		),
 		BackgroundColor3 = theme.slotBackgroundColor,
 		BackgroundTransparency = 0.3,

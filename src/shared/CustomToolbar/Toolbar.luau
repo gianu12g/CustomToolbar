@@ -18,7 +18,6 @@
 ]]
 
 local Players = game:GetService("Players")
-local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.react)
@@ -76,10 +75,6 @@ local function Toolbar(props: Props)
 
 	local maxSlots = layout.maxVisibleSlots :: number
 
-	-- GUI inset for mouse -> ScreenGui coordinate correction
-	local guiInset = React.useMemo(function()
-		return GuiService:GetGuiInset()
-	end, {})
 
 	-----------------------------------------------------------------------
 	-- Slot state (React-owned)
@@ -304,7 +299,6 @@ local function Toolbar(props: Props)
 		ghostElement = React.createElement(DragGhost, {
 			slotData = drag.dragInfo.slotData,
 			mousePos = drag.mousePos,
-			guiInset = guiInset,
 			theme = theme,
 		})
 	end
