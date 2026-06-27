@@ -81,6 +81,11 @@ end
 
 local function BackpackPanel(props: Props)
 	local theme = props.theme
+	-- Backpack slots use a lighter fill than the hotbar so items read clearly on
+	-- the flat dark panel (the hotbar sits over the 3D world, which adds contrast).
+	local panelTheme = table.clone(theme)
+	panelTheme.slotBackgroundColor = Color3.fromRGB(74, 74, 74)
+	panelTheme.slotHoverColor = Color3.fromRGB(92, 92, 92)
 	local slotSize = theme.slotSize :: number
 	local padding = theme.slotPadding :: number
 	local columns = theme.panelColumns :: number
@@ -314,7 +319,7 @@ local function BackpackPanel(props: Props)
 			ZIndex = 6,
 		}, {
 			Title = React.createElement("TextLabel", {
-				Text = "Backpack",
+				Text = "Inventory",
 				Size = UDim2.new(0, 0, 1, 0),
 				AutomaticSize = Enum.AutomaticSize.X,
 				Position = UDim2.fromOffset(padding + math.round(2 * s), 0),
@@ -376,13 +381,14 @@ local function BackpackPanel(props: Props)
 			index = i,
 			slotData = slotData,
 			isSelected = false,
-			theme = theme,
+			theme = panelTheme,
 			source = "backpack",
 			onMouseDown = wrappedMouseDown,
 			onHoverChange = wrappedHoverChange,
 			isDragOver = resolvedDragOverIndex == i,
 			isBeingDragged = resolvedDragFromIndex == i,
 			showEmptySlotBG = props.showEmptySlotBG,
+			cornerVariant = "center", -- backpack slots are all square
 		})
 	end
 
@@ -488,8 +494,10 @@ local function BackpackPanel(props: Props)
 
 	return React.createElement("Frame", {
 		Size = UDim2.fromOffset(gridWidth, panelHeight),
-		Position = UDim2.new(0.5, 0, 0, math.round(-10 * s)),
-		AnchorPoint = Vector2.new(0.5, 1),
+		-- Left-aligned with the bar (anchored bottom-left) so it never clips off
+		-- screen when the toolbar sits in the lower-left corner.
+		Position = UDim2.new(0, 0, 0, math.round(-10 * s)),
+		AnchorPoint = Vector2.new(0, 1),
 		BackgroundColor3 = theme.panelBackgroundColor,
 		BackgroundTransparency = theme.panelBackgroundTransparency,
 		BorderSizePixel = 0,

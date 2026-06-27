@@ -44,16 +44,16 @@ local toolbar = CustomToolbar.new({
 		slotSize = 70, -- pixel size of each slot square
 		slotPadding = 6, -- gap between slots (pixels)
 		slotCornerRadius = 10, -- rounded corner radius (pixels)
-		slotBackgroundColor = Color3.fromRGB(28, 34, 44),
-		slotBackgroundTransparency = 0.05, -- 0 = opaque, 1 = invisible
-		slotBorderColor = Color3.fromRGB(72, 96, 130), -- default border (non-rarity)
+		slotBackgroundColor = Color3.fromRGB(43, 43, 43), -- inner fill (matches ExampleFakeUIStroke)
+		slotBackgroundTransparency = 0, -- 0 = opaque, 1 = invisible
+		slotBorderColor = Color3.fromRGB(60, 60, 60), -- panel border / divider / scrollbar tint
 		slotBorderWidth = 2, -- border thickness (pixels)
 		slotSelectedColor = Color3.fromRGB(70, 130, 220), -- background when selected
 		slotSelectedBorderColor = Color3.fromRGB(120, 170, 255), -- border when selected
-		slotHoverColor = Color3.fromRGB(40, 50, 64), -- background on hover
+		slotHoverColor = Color3.fromRGB(55, 55, 55), -- background on hover
 
 		-- Number badge (top-left of hotbar slots)
-		showSlotNumbers = true, -- show 1-9 labels
+		showSlotNumbers = false, -- 1-9 labels hidden
 		numberFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
 		numberColor = Color3.fromRGB(255, 255, 255),
 		numberSize = 12,
@@ -68,15 +68,22 @@ local toolbar = CustomToolbar.new({
 		iconSizeScale = 0.65, -- 0–1, fraction of slot size
 		iconColor = Color3.fromRGB(255, 255, 255),
 
+		-- Fake textured border (image-based "stroke" — real UIStrokes can't be textured)
+		fakeStroke = true,
+		fakeStrokeImage = "rbxassetid://74303582569088",
+		fakeStrokeColor = Color3.fromRGB(255, 255, 255),
+		fakeStrokeTransparency = 0.45,
+		fakeStrokeThickness = 0.05, -- ring width as a fraction of slot size (per side)
+
 		-- Backpack toggle button
 		backpackButtonIcon = "rbxasset://textures/ui/TopBar/inventoryOn.png",
 		backpackButtonSize = 45,
 
-		-- Backpack panel (grid that opens when you click the button)
-		panelBackgroundColor = Color3.fromRGB(18, 22, 30),
-		panelBackgroundTransparency = 0.02,
+		-- Backpack panel (grid; toggled with the ` backquote key)
+		panelBackgroundColor = Color3.fromRGB(40, 40, 40),
+		panelBackgroundTransparency = 0.05,
 		panelCornerRadius = 10,
-		panelColumns = 7, -- columns in the backpack grid
+		panelColumns = 4, -- columns in the backpack grid (8 slots = clean 4x2 grid)
 
 		-- Animations
 		selectAnimationSpeed = 0.15, -- seconds for selection tween
@@ -112,9 +119,9 @@ local toolbar = CustomToolbar.new({
 	-- Controls positioning and slot count.
 	layout = {
 		orientation = "Horizontal", -- "Horizontal" or "Vertical"
-		position = UDim2.fromScale(0.5, 0.98), -- screen position
-		anchorPoint = Vector2.new(0.5, 1), -- anchor relative to position
-		maxVisibleSlots = 6, -- hotbar slot count
+		position = UDim2.new(0, 24, 1, -24), -- 24px from the left & bottom edges (lower-left corner)
+		anchorPoint = Vector2.new(0, 1), -- anchor the toolbar's bottom-left corner
+		maxVisibleSlots = 3, -- hotbar slot count (active slots)
 		displayOrder = 10, -- ScreenGui.DisplayOrder
 	},
 
@@ -122,7 +129,7 @@ local toolbar = CustomToolbar.new({
 	autoManageBackpack = true, -- auto-sync tools from player.Backpack
 	keybindsEnabled = true, -- 1-9 number key shortcuts
 	gamepadEnabled = true, -- bumper scroll on gamepad
-	backpackSlotCount = 18, -- total cells in the backpack panel
+	backpackSlotCount = 8, -- total cells in the backpack panel
 	dragHoldTime = 0.5, -- seconds to hold before drag starts (backpack closed)
 	dragHoldTimeOpen = 0.05, -- seconds to hold before drag starts (backpack open)
 	showEmptySlotBG = false,

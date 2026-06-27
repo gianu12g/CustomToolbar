@@ -35,6 +35,13 @@ local DEFAULT_THEME: Types.ThemeConfig = {
 	slotSelectedBorderColor = Color3.fromRGB(0, 200, 255),
 	slotHoverColor = Color3.fromRGB(50, 50, 50),
 
+	-- Fake textured stroke (off by default; enable + set an image to use it)
+	fakeStroke = false,
+	fakeStrokeImage = "",
+	fakeStrokeColor = Color3.fromRGB(255, 255, 255),
+	fakeStrokeTransparency = 0,
+	fakeStrokeThickness = 0.07,
+
 	-- Number label (top-left corner of slot)
 	numberFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
 	numberColor = Color3.fromRGB(220, 220, 220),

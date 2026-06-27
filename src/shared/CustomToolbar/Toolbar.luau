@@ -203,6 +203,10 @@ local function Toolbar(props: Props)
 		local isBeingDraggedSlot = drag.isDragging and drag.dragInfo
 			and drag.dragInfo.source == "hotbar" and drag.dragInfo.index == i
 
+		-- Corner variant: first slot rounds the left edge, last rounds the right,
+		-- middles are square — so the row reads as one rounded pill.
+		local cornerVariant = if i == 1 then "left" elseif i == maxSlots then "right" else "center"
+
 		barChildren["Slot_" .. i] = React.createElement(Slot, {
 			index = i,
 			slotData = hotbarSlots[i],
@@ -213,60 +217,16 @@ local function Toolbar(props: Props)
 			onHoverChange = drag.onSlotHoverChange,
 			isDragOver = isDragOverSlot or false,
 			isBeingDragged = isBeingDraggedSlot or false,
+			cornerVariant = cornerVariant,
 		})
 	end
 
-	-- Backpack toggle button (also a drop target during drag)
-	local backpackBtnSize = theme.backpackButtonSize :: number
-	local cornerRadius = theme.slotCornerRadius :: number
-	local isBackpackBtnDragOver = drag.isDragging and drag.hoverTarget
-		and drag.hoverTarget.targetType == "backpackButton"
-
-	barChildren["BackpackBtn"] = React.createElement("ImageButton", {
-		Size = UDim2.fromOffset(backpackBtnSize, backpackBtnSize),
-		BackgroundColor3 = theme.slotBackgroundColor,
-		BackgroundTransparency = theme.slotBackgroundTransparency,
-		Image = theme.backpackButtonIcon,
-		ImageColor3 = theme.iconColor,
-		ScaleType = Enum.ScaleType.Fit,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-		LayoutOrder = maxSlots + 1,
-
-		[React.Event.Activated] = function()
-			if drag.justDraggedRef.current then
-				return
-			end
-			setBackpackOpen(function(prev)
-				return not prev
-			end)
-		end,
-		-- Register as drop target during drag. The visual check
-		-- (isBackpackBtnDragOver) already guards on drag.isDragging,
-		-- so unconditional hover reporting is safe.
-		[React.Event.MouseEnter] = function()
-			drag.onSlotHoverChange(0, "backpackButton", true)
-		end,
-		[React.Event.MouseLeave] = function()
-			drag.onSlotHoverChange(0, "backpackButton", false)
-		end,
-	}, {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, cornerRadius),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = if isBackpackBtnDragOver
-				then (theme.slotSelectedBorderColor :: Color3)
-				elseif backpackOpen
-				then (theme.slotSelectedBorderColor :: Color3)
-				else (theme.slotBorderColor :: Color3),
-			Thickness = theme.slotBorderWidth,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}),
-	})
+	-- Backpack toggle button removed by design — the panel is toggled with the
+	-- ` (backquote) key via useKeyboardInput. Dragging a tool to the backpack is
+	-- now done by opening the panel and dropping onto a cell.
 
 	-- Compute bar size
-	local itemCount = maxSlots + 1
+	local itemCount = maxSlots
 	local barWidth, barHeight
 	if isHorizontal then
 		barWidth = (itemCount * slotSize) + ((itemCount - 1) * padding) + padding * 2
@@ -275,6 +235,13 @@ local function Toolbar(props: Props)
 		barWidth = slotSize + padding * 2
 		barHeight = (itemCount * slotSize) + ((itemCount - 1) * padding) + padding * 2
 	end
+
+	-- Widen the frame to the backpack panel width so the (now buttonless) hotbar
+	-- centres under the panel instead of hugging the left edge. The panel stays
+	-- left-aligned, so it keeps its position while the hotbar shifts right.
+	local panelColumns = theme.panelColumns :: number
+	local panelWidth = (panelColumns * slotSize) + ((panelColumns - 1) * padding) + padding * 2
+	local frameWidth = if isHorizontal then math.max(barWidth, panelWidth) else barWidth
 
 	barChildren["Padding"] = React.createElement("UIPadding", {
 		PaddingTop = UDim.new(0, padding),
@@ -306,7 +273,7 @@ local function Toolbar(props: Props)
 	return React.createElement(React.Fragment, nil, {
 		-- Main toolbar frame (hotbar bar + backpack panel)
 		ToolbarFrame = React.createElement("Frame", {
-			Size = UDim2.fromOffset(barWidth, barHeight),
+			Size = UDim2.fromOffset(frameWidth, barHeight),
 			Position = layout.position,
 			AnchorPoint = layout.anchorPoint,
 			BackgroundTransparency = 1,
