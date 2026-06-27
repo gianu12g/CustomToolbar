@@ -53,7 +53,7 @@ local toolbar = CustomToolbar.new({
 		slotHoverColor = Color3.fromRGB(55, 55, 55), -- background on hover
 
 		-- Number badge (top-left of hotbar slots)
-		showSlotNumbers = false, -- 1-9 labels hidden
+		showSlotNumbers = true, -- 1-9 labels shown via the SlotIndicator badge
 		numberFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
 		numberColor = Color3.fromRGB(255, 255, 255),
 		numberSize = 12,
@@ -80,8 +80,8 @@ local toolbar = CustomToolbar.new({
 		backpackButtonSize = 45,
 
 		-- Backpack panel (grid; toggled with the ` backquote key)
-		panelBackgroundColor = Color3.fromRGB(40, 40, 40),
-		panelBackgroundTransparency = 0.05,
+		panelBackgroundColor = Color3.fromRGB(29, 29, 29),
+		panelBackgroundTransparency = 0,
 		panelCornerRadius = 10,
 		panelColumns = 4, -- columns in the backpack grid (8 slots = clean 4x2 grid)
 

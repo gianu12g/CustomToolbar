@@ -248,30 +248,21 @@ local function Slot(props: Props)
 		transparency = 0.7
 	end
 
+	-- Dim unequipped hotbar slots by 0.2 transparency ("20%") so the equipped
+	-- slot reads as active. The equipped slot (isSelected) and all backpack slots
+	-- render at full/current values; equipping also shows the 0.6 border highlight.
+	local dim = if props.source == "hotbar" and not isSelected then 0.2 else 0
+
 	local iconSize = theme.iconSizeScale :: number
 	local iconFill = fakeStroke -- example fills the slot with the item image
 
-	-- Slot content shared by both render paths (number badge, icon, name label).
+	-- Slot content shared by both render paths (icon, name label).
 	local content: { [string]: any } = {
-		-- Number badge (top-left, hotbar only)
-		NumberLabel = theme.showSlotNumbers and props.source == "hotbar" and React.createElement("TextLabel", {
-			Text = tostring(props.index),
-			Size = UDim2.fromOffset(math.round(18 * s), math.round(16 * s)),
-			Position = UDim2.fromOffset(math.round(4 * s), math.round(2 * s)),
-			BackgroundTransparency = 1,
-			FontFace = theme.numberFont,
-			TextColor3 = theme.numberColor,
-			TextSize = theme.numberSize,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Top,
-			ZIndex = 3,
-		}),
-
 		-- Tool icon (fills the slot when fakeStroke matches the example)
 		Icon = slotData and React.createElement("ImageLabel", {
 			Image = slotData.icon,
 			ImageColor3 = theme.iconColor,
-			ImageTransparency = isBeingDragged and 0.5 or 0,
+			ImageTransparency = math.min((isBeingDragged and 0.5 or 0) + dim, 1),
 			Size = if iconFill then UDim2.fromScale(1, 1) else UDim2.fromScale(iconSize, iconSize),
 			Position = if iconFill then UDim2.fromScale(0.5, 0.5) else UDim2.fromScale(0.5, 0.45),
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -291,9 +282,58 @@ local function Slot(props: Props)
 			TextSize = theme.nameSize,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextXAlignment = Enum.TextXAlignment.Center,
+			TextTransparency = dim,
 			ZIndex = 3,
 		}),
 	}
+
+	-- Slot number indicator: a circular badge centred just below the slot,
+	-- replacing the old top-left number label. Mirrors the user-designed
+	-- "SlotIndicator" frame: rounded grey badge with a scaled white numeral and
+	-- a black outline. Hotbar only; gated by showSlotNumbers. Fades with the
+	-- slot when unequipped (dim).
+	local slotIndicator = (theme.showSlotNumbers and props.source == "hotbar") and React.createElement("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromScale(0.3, 0.3),
+		Position = UDim2.fromScale(0.5, 1.2),
+		BackgroundColor3 = Color3.fromRGB(97, 97, 97),
+		BackgroundTransparency = math.min(0 + dim, 1),
+		BorderSizePixel = 0,
+		ZIndex = 4,
+	}, {
+		Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		Stroke = React.createElement("UIStroke", {
+			Color = Color3.fromRGB(0, 0, 0),
+			Thickness = 0.05,
+			Transparency = math.min(0.83 + dim, 1),
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+			StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize,
+		}),
+		Label = React.createElement("TextLabel", {
+			Text = tostring(props.index),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.49, 0.49),
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			FontFace = theme.numberFont,
+			TextColor3 = theme.numberColor,
+			TextScaled = true,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			TextTransparency = math.min(0 + dim, 1),
+			ZIndex = 4,
+		}, {
+			Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
+			Stroke = React.createElement("UIStroke", {
+				Color = Color3.fromRGB(0, 0, 0),
+				Thickness = 0.05,
+				Transparency = math.min(0 + dim, 1),
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+				StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize,
+			}),
+		}),
+	})
 
 	-- Shared props for the root ImageButton (size + input handling).
 	local rootProps: { [string]: any } = {
@@ -360,7 +400,7 @@ local function Slot(props: Props)
 			Border = React.createElement("ImageLabel", {
 				Image = fakeStrokeImage,
 				ImageColor3 = fakeStrokeColor,
-				ImageTransparency = fakeStrokeTransparency,
+				ImageTransparency = math.min(fakeStrokeTransparency + dim, 1),
 				ScaleType = Enum.ScaleType.Stretch,
 				Size = UDim2.fromScale(1, 1),
 				Position = UDim2.fromScale(0.5, 0.5),
@@ -374,10 +414,11 @@ local function Slot(props: Props)
 					Position = UDim2.fromScale(0.5, 0.5),
 					AnchorPoint = Vector2.new(0.5, 0.5),
 					BackgroundColor3 = fillColor,
-					BackgroundTransparency = transparency,
+					BackgroundTransparency = math.min(transparency + dim, 1),
 					BorderSizePixel = 0,
 				}, innerChildren),
 			}),
+			SlotIndicator = slotIndicator,
 		})
 	end
 
@@ -399,6 +440,8 @@ local function Slot(props: Props)
 		Thickness = theme.slotBorderWidth,
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 	})
+
+	content.SlotIndicator = slotIndicator
 
 	return React.createElement("ImageButton", rootProps, content)
 end

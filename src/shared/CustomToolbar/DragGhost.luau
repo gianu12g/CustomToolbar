@@ -43,11 +43,6 @@ local function DragGhost(props: Props)
 		Corner = React.createElement("UICorner", {
 			CornerRadius = UDim.new(0, cornerRadius),
 		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = theme.slotSelectedBorderColor,
-			Thickness = theme.slotBorderWidth,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}),
 	})
 end
 
