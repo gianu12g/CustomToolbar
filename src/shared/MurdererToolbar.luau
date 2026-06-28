@@ -29,6 +29,8 @@
 	  MurdererToolbar.new(config?) -> handle
 	  handle:Mount()
 	  handle:Destroy()
+	  handle._screenGui            -> the bound MurdererGUI ScreenGui (nil until it binds;
+	                                  re-points at the new clone each respawn)
 
 	Example
 	  local MurdererToolbar = require(ReplicatedStorage.Shared.MurdererToolbar)
@@ -38,6 +40,11 @@
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
+local CollectionService = game:GetService("CollectionService")
+
+-- CollectionService tag added to the bound ScreenGui so other systems can find /
+-- exclude it. Re-applied on every bind (the GUI re-clones on respawn).
+local EXCLUDE_TAG = "Exclude"
 
 ---------------------------------------------------------------------------
 -- Config
@@ -139,6 +146,7 @@ function ToolbarHandle.new(config: Config?)
 	self._conns = {} :: { RBXScriptConnection }
 	self._toolConns = {} :: { RBXScriptConnection }
 	self._binding = nil :: Binding?
+	self._screenGui = nil :: ScreenGui? -- the bound MurdererGUI (exposed, like TheHostToolbar)
 	self._mounted = false
 	return self
 end
@@ -328,6 +336,7 @@ function ToolbarHandle:_unbind()
 		end
 	end
 	self._binding = nil
+	self._screenGui = nil
 end
 
 -- Bind to a concrete MurdererGUI instance (the PlayerGui copy). Re-runs each
@@ -393,6 +402,9 @@ function ToolbarHandle:_bind(gui: ScreenGui)
 	end
 
 	self._binding = binding
+	self._screenGui = gui
+	gui.Enabled = true -- the GUI ships disabled in StarterGui; reveal it on mount/bind
+	CollectionService:AddTag(gui, EXCLUDE_TAG)
 	self:_rebuild()
 end
 
