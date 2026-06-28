@@ -1,6 +1,6 @@
 --!strict
 --[[
-	CustomToolbar – Type definitions
+	TheHostToolbar – Type definitions
 	No external dependencies. Import this module for shared types.
 ]]
 
@@ -16,6 +16,14 @@ export type ThemeConfig = {
 	slotSelectedColor: Color3?,
 	slotSelectedBorderColor: Color3?,
 	slotHoverColor: Color3?,
+
+	-- Fake textured stroke (image-based border — a real UIStroke is a vector
+	-- and cannot be textured, so we fake one with a layered ImageLabel)
+	fakeStroke: boolean?,             -- enable the image-based border
+	fakeStrokeImage: string?,         -- border texture asset id
+	fakeStrokeColor: Color3?,         -- ImageColor3 tint applied to the texture
+	fakeStrokeTransparency: number?,  -- 0 = opaque, 1 = invisible
+	fakeStrokeThickness: number?,     -- ring width as a fraction of slot size (per side)
 
 	-- Number label
 	numberFont: Font?,

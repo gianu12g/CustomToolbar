@@ -1,6 +1,6 @@
 --!strict
 --[[
-	CustomToolbar – BackpackPanel
+	TheHostToolbar – BackpackPanel
 	Extension inventory grid showing overflow tools not on the hotbar.
 	Always shows a fixed grid of slots (filled + empty) so players can
 	drag items into any open cell. Mirrors Roblox backpack behaviour.
@@ -388,6 +388,7 @@ local function BackpackPanel(props: Props)
 			isDragOver = resolvedDragOverIndex == i,
 			isBeingDragged = resolvedDragFromIndex == i,
 			showEmptySlotBG = props.showEmptySlotBG,
+			cornerVariant = "center", -- backpack slots are all square
 		})
 	end
 

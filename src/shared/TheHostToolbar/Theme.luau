@@ -1,8 +1,9 @@
 --!strict
 --[[
-	CustomToolbar – Theme
-	Provides sensible defaults that closely match Roblox's native backpack bar,
-	plus a deepMerge helper so consumers only override what they care about.
+	TheHostToolbar – Theme
+	Game-specific defaults built around the fake textured stroke look.
+	fakeStroke is ON by default here (this module exists to drive that style);
+	a deepMerge helper lets consumers override only what they care about.
 ]]
 
 local Types = require(script.Parent.Types)
@@ -34,6 +35,14 @@ local DEFAULT_THEME: Types.ThemeConfig = {
 	slotSelectedColor = Color3.fromRGB(0, 162, 255),
 	slotSelectedBorderColor = Color3.fromRGB(0, 200, 255),
 	slotHoverColor = Color3.fromRGB(50, 50, 50),
+
+	-- Fake textured stroke (ON by default — this is the module's signature look).
+	-- The image is the game's border texture; override per-game as needed.
+	fakeStroke = true,
+	fakeStrokeImage = "rbxassetid://74303582569088",
+	fakeStrokeColor = Color3.fromRGB(255, 255, 255),
+	fakeStrokeTransparency = 0.45,
+	fakeStrokeThickness = 0.05,
 
 	-- Number label (top-left corner of slot)
 	numberFont = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),

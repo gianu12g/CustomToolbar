@@ -1,6 +1,6 @@
 --!strict
 --[[
-	CustomToolbar – Toolbar
+	TheHostToolbar – Toolbar
 	Main React component. Orchestrates hooks and renders the hotbar,
 	backpack panel, and drag ghost.
 
@@ -203,6 +203,10 @@ local function Toolbar(props: Props)
 		local isBeingDraggedSlot = drag.isDragging and drag.dragInfo
 			and drag.dragInfo.source == "hotbar" and drag.dragInfo.index == i
 
+		-- Corner variant: first slot rounds the left edge, last rounds the right,
+		-- middles are square — so the row reads as one rounded pill.
+		local cornerVariant = if i == 1 then "left" elseif i == maxSlots then "right" else "center"
+
 		barChildren["Slot_" .. i] = React.createElement(Slot, {
 			index = i,
 			slotData = hotbarSlots[i],
@@ -213,16 +217,18 @@ local function Toolbar(props: Props)
 			onHoverChange = drag.onSlotHoverChange,
 			isDragOver = isDragOverSlot or false,
 			isBeingDragged = isBeingDraggedSlot or false,
+			cornerVariant = cornerVariant,
 		})
 	end
 
 	------------------------------------------------------------------
 	-- Backpack toggle button (restored). Sits at the right end of the
-	-- hotbar row. Styled to match the slots: an ImageButton holding the
-	-- inventory icon with a vector UIStroke border. Doubles as a drop
-	-- target ("backpackButton") during drags. Highlights when the panel
-	-- is open, and fades by 0.2 when closed — matching the equipped /
-	-- unequipped slot behaviour.
+	-- hotbar row. Styled to match the textured slots and colour scheme:
+	-- a transparent ImageButton holding the fake-stroke border + inner
+	-- fill with the inventory icon centred. Doubles as a drop target
+	-- ("backpackButton") during drags. Highlights (0.6 border) when the
+	-- panel is open, and fades by 0.2 when closed — matching the
+	-- equipped / unequipped slot behaviour.
 	------------------------------------------------------------------
 	local backpackBtnSize = theme.backpackButtonSize :: number
 	local isBpBtnDragOver = (drag.isDragging and drag.hoverTarget ~= nil
@@ -230,34 +236,92 @@ local function Toolbar(props: Props)
 	local bpHighlight = backpackOpen or isBpBtnDragOver
 	local bpDim = if bpHighlight then 0 else 0.2
 
-	local backpackBtnInner: { [string]: any } = {
-		Corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0, theme.slotCornerRadius),
-		}),
-		Stroke = React.createElement("UIStroke", {
-			Color = if bpHighlight
-				then (theme.slotBorderColor :: Color3):Lerp(Color3.new(1, 1, 1), 0.4)
-				else (theme.slotBorderColor :: Color3),
-			Thickness = theme.slotBorderWidth,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}),
-		Icon = React.createElement("ImageLabel", {
-			Image = theme.backpackButtonIcon,
-			ImageColor3 = theme.iconColor,
-			ImageTransparency = bpDim,
-			Size = UDim2.fromScale(0.85, 0.85),
-			Position = UDim2.fromScale(0.5, 0.5),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundTransparency = 1,
-			ScaleType = Enum.ScaleType.Fit,
-			ZIndex = 2,
-		}),
-	}
+	local backpackBtnInner: { [string]: any }
+	if theme.fakeStroke == true then
+		local strokeImage = theme.fakeStrokeImage or ""
+		local strokeColor = theme.fakeStrokeColor or Color3.new(1, 1, 1)
+		local strokeTransparency = theme.fakeStrokeTransparency or 0
+		local strokeThickness = theme.fakeStrokeThickness or 0.07
+		local bpInnerScale = math.clamp(1 - 2 * strokeThickness, 0.1, 1)
+		local bpFill: Color3 = if bpHighlight
+			then (theme.slotBackgroundColor :: Color3):Lerp(Color3.new(1, 1, 1), 0.3)
+			else (theme.slotBackgroundColor :: Color3)
+
+		backpackBtnInner = {
+			Border = React.createElement("ImageLabel", {
+				Image = strokeImage,
+				ImageColor3 = strokeColor,
+				ImageTransparency = math.min(strokeTransparency + bpDim, 1),
+				ScaleType = Enum.ScaleType.Stretch,
+				Size = UDim2.fromScale(1, 1),
+				Position = UDim2.fromScale(0.5, 0.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = if bpHighlight then 0.6 else 1,
+			}, {
+				BorderCorner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
+				Inner = React.createElement("Frame", {
+					Size = UDim2.fromScale(bpInnerScale, bpInnerScale),
+					Position = UDim2.fromScale(0.5, 0.5),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					BackgroundColor3 = bpFill,
+					BackgroundTransparency = math.min((theme.slotBackgroundTransparency :: number) + bpDim, 1),
+					BorderSizePixel = 0,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
+					Gradient = React.createElement("UIGradient", {
+						Rotation = 45,
+						Color = ColorSequence.new(Color3.new(0, 0, 0)),
+						Transparency = NumberSequence.new({
+							NumberSequenceKeypoint.new(0, 0.38125),
+							NumberSequenceKeypoint.new(0.5, 1),
+							NumberSequenceKeypoint.new(1, 0.38125),
+						}),
+					}),
+					Icon = React.createElement("ImageLabel", {
+						Image = theme.backpackButtonIcon,
+						ImageColor3 = theme.iconColor,
+						ImageTransparency = bpDim,
+						Size = UDim2.fromScale(0.85, 0.85),
+						Position = UDim2.fromScale(0.5, 0.5),
+						AnchorPoint = Vector2.new(0.5, 0.5),
+						BackgroundTransparency = 1,
+						ScaleType = Enum.ScaleType.Fit,
+						ZIndex = 2,
+					}),
+				}),
+			}),
+		}
+	else
+		backpackBtnInner = {
+			Corner = React.createElement("UICorner", {
+				CornerRadius = UDim.new(0, theme.slotCornerRadius),
+			}),
+			Stroke = React.createElement("UIStroke", {
+				Color = if bpHighlight
+					then (theme.slotBorderColor :: Color3):Lerp(Color3.new(1, 1, 1), 0.4)
+					else (theme.slotBorderColor :: Color3),
+				Thickness = theme.slotBorderWidth,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			}),
+			Icon = React.createElement("ImageLabel", {
+				Image = theme.backpackButtonIcon,
+				ImageColor3 = theme.iconColor,
+				ImageTransparency = bpDim,
+				Size = UDim2.fromScale(0.85, 0.85),
+				Position = UDim2.fromScale(0.5, 0.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundTransparency = 1,
+				ScaleType = Enum.ScaleType.Fit,
+				ZIndex = 2,
+			}),
+		}
+	end
 
 	barChildren["BackpackBtn"] = React.createElement("ImageButton", {
 		Size = UDim2.fromOffset(backpackBtnSize, backpackBtnSize),
 		BackgroundColor3 = theme.slotBackgroundColor,
-		BackgroundTransparency = math.min((theme.slotBackgroundTransparency :: number) + bpDim, 1),
+		BackgroundTransparency = if theme.fakeStroke == true then 1 else math.min((theme.slotBackgroundTransparency :: number) + bpDim, 1),
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
 		LayoutOrder = maxSlots + 1,

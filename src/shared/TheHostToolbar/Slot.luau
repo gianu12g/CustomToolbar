@@ -1,13 +1,23 @@
 --!strict
 --[[
-	CustomToolbar – Slot
+	TheHostToolbar – Slot
 	A single toolbar slot. Handles hover highlight, selection ring,
 	number badge, tool icon, tool name label, drag interactions,
 	and rarity-based animated border effects via RarityOutline.
 
-	Slots render as a classic flat frame with a vector UIStroke border.
-	Non-Common rarities upgrade the border to an animated spinning gradient
-	outline (see RarityOutline); Common and unknown tiers use a static colour.
+	Border rendering has two paths:
+	  • Fake textured stroke (theme.fakeStroke = true) — a larger textured
+	    ImageLabel sits behind a slightly smaller inner Frame that holds the
+	    fill + content, so only a ring of the texture shows around the edges.
+	    This is the only way to texture a "stroke"; a real UIStroke is a
+	    vector and cannot display an image. Replicates the ExampleFakeUIStroke
+	    design (border + inner share a per-corner UICorner; inner has a black
+	    45° gradient; selected slots brighten the border background).
+	  • Classic flat slot with a vector UIStroke border (fallback).
+
+	cornerVariant ("left" | "center" | "right") drives the per-corner radii so
+	a row of slots reads as one rounded pill (left rounds the left edge, right
+	rounds the right edge, center is square).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -31,6 +41,38 @@ local RARITY_SPEED: { [string]: number } = {
 }
 
 ---------------------------------------------------------------------------
+-- Per-corner radii for the fake-stroke variants (matches ExampleFakeUIStroke).
+-- Applied identically to the border ImageLabel and the inner fill Frame.
+---------------------------------------------------------------------------
+local ROUND = UDim.new(0.3, 0)
+local SHARP = UDim.new(0, 0)
+local CORNER_VARIANTS: { [string]: { tl: UDim, tr: UDim, br: UDim, bl: UDim } } = {
+	left   = { tl = ROUND, tr = SHARP, br = SHARP, bl = ROUND },
+	center = { tl = SHARP, tr = SHARP, br = SHARP, bl = SHARP },
+	right  = { tl = SHARP, tr = ROUND, br = ROUND, bl = SHARP },
+}
+
+-- Inner fill gradient: solid black, fading from ~0.38 opacity at the
+-- two 45° corners to fully transparent in the centre (subtle vignette).
+local FILL_GRADIENT_COLOR = ColorSequence.new(Color3.new(0, 0, 0))
+local FILL_GRADIENT_TRANSPARENCY = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.38125),
+	NumberSequenceKeypoint.new(0.5, 1),
+	NumberSequenceKeypoint.new(1, 0.38125),
+})
+
+-- Build a fresh UICorner element for a variant (callers need distinct elements).
+local function makeUICorner(variant: string)
+	local r = CORNER_VARIANTS[variant] or CORNER_VARIANTS.center
+	return React.createElement("UICorner", {
+		TopLeftRadius = r.tl,
+		TopRightRadius = r.tr,
+		BottomRightRadius = r.br,
+		BottomLeftRadius = r.bl,
+	})
+end
+
+---------------------------------------------------------------------------
 
 type Props = {
 	index: number,
@@ -38,6 +80,7 @@ type Props = {
 	isSelected: boolean,
 	theme: Types.ThemeConfig,
 	source: string, -- "hotbar" | "backpack"
+	cornerVariant: string?, -- "left" | "center" | "right" (default "center")
 	onMouseDown: ((index: number, source: string) -> ())?,
 	onHoverChange: ((index: number, source: string, hovering: boolean) -> ())?,
 	isDragOver: boolean?,
@@ -54,10 +97,20 @@ local function Slot(props: Props)
 	local isBeingDragged = props.isBeingDragged or false
 	local showEmptyBG = if props.showEmptySlotBG == nil then true else props.showEmptySlotBG
 	local isEmptyHidden = not slotData and not showEmptyBG
+	local cornerVariant = props.cornerVariant or "center"
 
 	local slotSize = theme.slotSize :: number
 	local cornerRadius = theme.slotCornerRadius :: number
 	local s = theme._scale or 1 -- viewport scale factor
+
+	-- Fake textured stroke (image-based border; replaces the vector UIStroke).
+	local fakeStroke = theme.fakeStroke == true
+	local fakeStrokeImage = theme.fakeStrokeImage or ""
+	local fakeStrokeColor = theme.fakeStrokeColor or Color3.new(1, 1, 1)
+	local fakeStrokeTransparency = theme.fakeStrokeTransparency or 0
+	local fakeStrokeThickness = theme.fakeStrokeThickness or 0.07
+	-- Inner fill scale: subtract the ring width from both sides.
+	local innerScale = math.clamp(1 - 2 * fakeStrokeThickness, 0.1, 1)
 
 	-- Resolve rarity info
 	local rarity: string? = if slotData then slotData.rarity else nil
@@ -92,6 +145,22 @@ local function Slot(props: Props)
 				effectRef.current:Destroy()
 			end)
 			effectRef.current = nil
+		end
+
+		-- When the fake textured stroke is active it owns the border entirely;
+		-- skip the vector rarity outline so we never double up.
+		-- NOTE: fakeStroke is ON by default for TheHostToolbar (see Theme), so the
+		-- animated RarityOutline below is intentionally bypassed in the default look.
+		-- It only renders when a consumer explicitly sets theme.fakeStroke = false.
+		if fakeStroke then
+			return function()
+				if effectRef.current then
+					pcall(function()
+						effectRef.current:Destroy()
+					end)
+					effectRef.current = nil
+				end
+			end
 		end
 
 		local instance = slotRef.current
@@ -148,9 +217,9 @@ local function Slot(props: Props)
 				effectRef.current = nil
 			end
 		end
-	end, { rarity, rarityColor, refReady } :: { any })
+	end, { rarity, rarityColor, refReady, fakeStroke } :: { any })
 
-	-- Determine background color
+	-- Determine background color (classic path / inner fill base)
 	local bgColor: Color3
 	if isDragOver then
 		bgColor = theme.slotSelectedColor :: Color3
@@ -162,7 +231,7 @@ local function Slot(props: Props)
 		bgColor = theme.slotBackgroundColor :: Color3
 	end
 
-	-- Border colour: selection/drag states override rarity colour
+	-- Border colour: selection/drag states override rarity colour (classic path)
 	local borderColor: Color3
 	if isDragOver then
 		borderColor = theme.slotSelectedBorderColor :: Color3
@@ -188,19 +257,20 @@ local function Slot(props: Props)
 	local dim = if props.source == "hotbar" and not isSelected then 0.2 else 0
 
 	local iconSize = theme.iconSizeScale :: number
+	local iconFill = fakeStroke -- example fills the slot with the item image
 
-	-- Slot content (icon, name label).
+	-- Slot content shared by both render paths (icon, name label).
 	local content: { [string]: any } = {
-		-- Tool icon
+		-- Tool icon (fills the slot when fakeStroke matches the example)
 		Icon = slotData and React.createElement("ImageLabel", {
 			Image = slotData.icon,
 			ImageColor3 = theme.iconColor,
 			ImageTransparency = math.min((isBeingDragged and 0.5 or 0) + dim, 1),
-			Size = UDim2.fromScale(iconSize, iconSize),
-			Position = UDim2.fromScale(0.5, 0.45),
+			Size = if iconFill then UDim2.fromScale(1, 1) else UDim2.fromScale(iconSize, iconSize),
+			Position = if iconFill then UDim2.fromScale(0.5, 0.5) else UDim2.fromScale(0.5, 0.45),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
-			ScaleType = Enum.ScaleType.Fit,
+			ScaleType = if iconFill then Enum.ScaleType.Stretch else Enum.ScaleType.Fit,
 			ZIndex = 2,
 		}),
 
@@ -299,7 +369,64 @@ local function Slot(props: Props)
 	}
 
 	-----------------------------------------------------------------------
-	-- Render: classic flat slot with a vector UIStroke border.
+	-- Render path A: fake textured stroke (image-based border).
+	-- Border ImageLabel fills the slot; a slightly smaller inner Frame holds
+	-- the fill + content on top, so only a ring of the texture peeks out.
+	-- Selected/drag-over slots brighten the border background (1 → 0.6).
+	-----------------------------------------------------------------------
+	if fakeStroke and not isEmptyHidden then
+		local highlight = isSelected or isDragOver
+
+		-- Inner fill: hover lightens slightly; equipped (selected) brightens more
+		-- so an equipped slot reads clearly different from unequipped ones
+		-- (on top of the border-background highlight below).
+		local baseFill: Color3 = if isHovered and slotData
+			then (theme.slotHoverColor :: Color3)
+			else (theme.slotBackgroundColor :: Color3)
+		local fillColor: Color3 = if isSelected then baseFill:Lerp(Color3.new(1, 1, 1), 0.3) else baseFill
+
+		local innerChildren: { [string]: any } = {
+			Corner = makeUICorner(cornerVariant),
+			Gradient = React.createElement("UIGradient", {
+				Rotation = 45,
+				Color = FILL_GRADIENT_COLOR,
+				Transparency = FILL_GRADIENT_TRANSPARENCY,
+			}),
+		}
+		for key, value in content do
+			innerChildren[key] = value
+		end
+
+		rootProps.BackgroundTransparency = 1
+
+		return React.createElement("ImageButton", rootProps, {
+			Border = React.createElement("ImageLabel", {
+				Image = fakeStrokeImage,
+				ImageColor3 = fakeStrokeColor,
+				ImageTransparency = math.min(fakeStrokeTransparency + dim, 1),
+				ScaleType = Enum.ScaleType.Stretch,
+				Size = UDim2.fromScale(1, 1),
+				Position = UDim2.fromScale(0.5, 0.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = if highlight then 0.6 else 1,
+			}, {
+				BorderCorner = makeUICorner(cornerVariant),
+				Inner = React.createElement("Frame", {
+					Size = UDim2.fromScale(innerScale, innerScale),
+					Position = UDim2.fromScale(0.5, 0.5),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					BackgroundColor3 = fillColor,
+					BackgroundTransparency = math.min(transparency + dim, 1),
+					BorderSizePixel = 0,
+				}, innerChildren),
+			}),
+			SlotIndicator = slotIndicator,
+		})
+	end
+
+	-----------------------------------------------------------------------
+	-- Render path B: classic flat slot with a vector UIStroke border.
 	-----------------------------------------------------------------------
 	rootProps.BackgroundColor3 = bgColor
 	rootProps.BackgroundTransparency = transparency
